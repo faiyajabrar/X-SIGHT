@@ -41,6 +41,9 @@ import cv2
 import math
 import copy
 from typing import Dict, Any
+from pathlib import Path
+from datetime import datetime
+import json
 
 from utils.pannuke_dataset import PanNukeDataset
 from models.attention_unet import AttentionUNet
@@ -320,7 +323,7 @@ class AdvancedAttentionModel(pl.LightningModule):
     def __init__(self, lr=3e-4, dropout=0.1, weight_decay=1e-4, 
                  warmup_epochs=5, total_epochs=60, min_lr_factor=0.01, steps_per_epoch=None,
                  use_mixup=True, mixup_alpha=0.4, use_ema=True, ema_decay=0.9999,
-                 progressive_resize=True, start_size=128, end_size=256, use_tta=False):
+                 progressive_resize=True, start_size=128, end_size=256, use_tta=False, resume_path=None):
         super().__init__()
         self.save_hyperparameters()
         
@@ -353,6 +356,19 @@ class AdvancedAttentionModel(pl.LightningModule):
         
         # Progressive resize tracking
         self.current_size = start_size if progressive_resize else end_size
+        
+        # Resume state management
+        self.resume_path = resume_path
+        self.training_state_path = Path('lightning_logs/training_state.json')
+        self.data_split_path = Path('lightning_logs/data_split.json')
+        
+        # Best metrics tracking for resume
+        self.best_val_dice = 0.0
+        self.best_val_loss = float('inf')
+        
+        # Load resume state if provided
+        if resume_path:
+            self.load_training_state()
 
     def forward(self, x):
         return self.model(x)
@@ -445,6 +461,13 @@ class AdvancedAttentionModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         imgs, masks = batch['image'], batch['mask']
+        
+        # Apply same progressive resizing to validation data for consistency
+        if self.progressive_resize:
+            target_size = self.get_current_image_size()
+            if imgs.shape[-1] != target_size:
+                imgs = F.interpolate(imgs, size=(target_size, target_size), mode='bilinear', align_corners=False)
+                masks = F.interpolate(masks.unsqueeze(1).float(), size=(target_size, target_size), mode='nearest').squeeze(1).long()
         
         # Test Time Augmentation (TTA) for better validation metrics
         tta_preds = []
@@ -560,6 +583,98 @@ class AdvancedAttentionModel(pl.LightningModule):
                 "name": "onecycle"
             }
         }
+    
+    def save_training_state(self):
+        """Save training state for resuming."""
+        self.training_state_path.parent.mkdir(exist_ok=True)
+        
+        # Get current learning rate
+        current_lr = self.trainer.optimizers[0].param_groups[0]['lr'] if self.trainer else self.lr
+        
+        state = {
+            'epoch': self.current_epoch,
+            'global_step': self.global_step if hasattr(self, 'global_step') else 0,
+            'best_val_dice': self.best_val_dice,
+            'best_val_loss': self.best_val_loss,
+            'current_lr': current_lr,
+            'current_image_size': self.current_size,
+            'random_state': {
+                'python': np.random.get_state()[1].tolist(),  # Convert to JSON serializable
+                'numpy': np.random.get_state(),
+                'torch': torch.get_rng_state().tolist()
+            },
+            'hyperparameters': {
+                'lr': self.lr,
+                'dropout': self.hparams.get('dropout', 0.1),
+                'weight_decay': self.weight_decay,
+                'total_epochs': self.total_epochs,
+                'progressive_resize': self.progressive_resize,
+                'start_size': self.start_size,
+                'end_size': self.end_size,
+                'use_mixup': self.use_mixup,
+                'use_ema': self.use_ema,
+                'use_tta': self.use_tta
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        with open(self.training_state_path, 'w') as f:
+            json.dump(state, f, indent=2, default=str)
+        
+        logger.info(f"💾 Training state saved to {self.training_state_path}")
+    
+    def load_training_state(self):
+        """Load training state for resuming."""
+        if not self.training_state_path.exists():
+            logger.warning(f"⚠️  Training state file not found: {self.training_state_path}")
+            return False
+        
+        try:
+            with open(self.training_state_path, 'r') as f:
+                state = json.load(f)
+            
+            # Restore metrics
+            self.best_val_dice = state.get('best_val_dice', 0.0)
+            self.best_val_loss = state.get('best_val_loss', float('inf'))
+            self.current_size = state.get('current_image_size', self.start_size)
+            
+            # Restore random states for reproducibility
+            if 'random_state' in state:
+                random_state = state['random_state']
+                if 'python' in random_state:
+                    np.random.set_state(('MT19937', np.array(random_state['python']), 624, 0, 0.0))
+                if 'torch' in random_state:
+                    torch.set_rng_state(torch.tensor(random_state['torch'], dtype=torch.uint8))
+            
+            logger.info(f"🔄 Training state loaded from {self.training_state_path}")
+            logger.info(f"   Resuming from epoch {state.get('epoch', 0)}")
+            logger.info(f"   Best val dice: {self.best_val_dice:.4f}")
+            logger.info(f"   Current image size: {self.current_size}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to load training state: {e}")
+            return False
+    
+    def on_validation_epoch_end(self):
+        """Track best metrics and save training state."""
+        # Get current validation metrics
+        val_dice = self.trainer.callback_metrics.get('val_dice', 0.0)
+        val_loss = self.trainer.callback_metrics.get('val_loss', float('inf'))
+        
+        # Update best metrics
+        if val_dice > self.best_val_dice:
+            self.best_val_dice = val_dice
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+        
+        # Save training state after each epoch
+        self.save_training_state()
+        
+        # Log progress with resume info
+        logger.info(f"📊 Epoch {self.current_epoch}: val_dice={val_dice:.4f} (best={self.best_val_dice:.4f})")
+        logger.info(f"🔄 Training state saved - can resume from epoch {self.current_epoch + 1}")
 
 
 class ProgressiveDataset(torch.utils.data.Dataset):
@@ -603,9 +718,11 @@ def get_dataloaders(batch_size=16, total_epochs=60):
     # Wrap training dataset with progressive augmentations
     ds_train_progressive = ProgressiveDataset(base_train_dataset, total_epochs=total_epochs)
 
-    # Simple split like previous successful runs
+    # Deterministic split for reproducibility - same seed always gives same split
     val_size = int(0.1 * len(ds_train_progressive))
     train_size = len(ds_train_progressive) - val_size
+    
+    # Use fixed seed for completely reproducible data splits across runs
     generator = torch.Generator().manual_seed(42)
     train_subset, val_subset = torch.utils.data.random_split(
         range(len(ds_train_progressive)), [train_size, val_size], generator=generator
@@ -625,6 +742,9 @@ def get_dataloaders(batch_size=16, total_epochs=60):
         ds_val, batch_size=batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=True, persistent_workers=False
     )
+    
+    logger.info(f"📊 Data split: {len(train_subset)} train samples, {len(val_subset)} validation samples")
+    logger.info("🔄 Using deterministic data split (seed=42) for reproducibility")
     
     return train_loader, val_loader
 
@@ -650,6 +770,10 @@ def main():
     parser.add_argument('--swa_start_epoch', type=int, default=30, help='Epoch to start SWA')
     parser.add_argument('--use_tta', action='store_true', help='Use Test Time Augmentation for validation')
     parser.add_argument('--disable_ema', action='store_true', help='Disable Exponential Moving Average')
+    
+    # Resume functionality
+    parser.add_argument('--resume', action='store_true', help='Resume training from checkpoint')
+    parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to checkpoint file for resuming')
     
     args = parser.parse_args()
     
@@ -693,6 +817,25 @@ def main():
     print(f"🔄 Learning rate scheduler will use {steps_per_epoch} steps per epoch")
     print(f"🎨 Progressive augmentations: Start simple, increase complexity over {args.epochs} epochs")
     
+    # Handle resume functionality
+    resume_checkpoint = None
+    if args.resume:
+        if args.checkpoint_path and Path(args.checkpoint_path).exists():
+            resume_checkpoint = args.checkpoint_path
+            print(f"🔄 Resuming from specified checkpoint: {resume_checkpoint}")
+        else:
+            # Look for latest checkpoint
+            checkpoint_dir = Path('lightning_logs')
+            if checkpoint_dir.exists():
+                checkpoints = list(checkpoint_dir.glob('**/last.ckpt'))
+                if checkpoints:
+                    resume_checkpoint = str(checkpoints[-1])  # Use most recent
+                    print(f"🔄 Auto-resuming from latest checkpoint: {resume_checkpoint}")
+                else:
+                    print("⚠️  No checkpoint found for resume, starting fresh")
+            else:
+                print("⚠️  No lightning_logs directory found, starting fresh")
+    
     # Create model with state-of-the-art optimization techniques
     model = AdvancedAttentionModel(
         lr=args.lr, 
@@ -703,7 +846,8 @@ def main():
         min_lr_factor=args.min_lr_factor,
         steps_per_epoch=steps_per_epoch,
         use_tta=args.use_tta,
-        use_ema=not args.disable_ema
+        use_ema=not args.disable_ema,
+        resume_path=resume_checkpoint
     )
     
     # Setup callbacks
@@ -763,8 +907,13 @@ def main():
     )
     
     # Train
-    print(f"\n🏃 Starting training with proper learning rate scheduling!")
-    trainer.fit(model, train_loader, val_loader)
+    if resume_checkpoint:
+        print(f"\n🔄 Resuming training from checkpoint!")
+        print(f"🏃 Training will continue with preserved state and data split")
+    else:
+        print(f"\n🏃 Starting fresh training with proper learning rate scheduling!")
+    
+    trainer.fit(model, train_loader, val_loader, ckpt_path=resume_checkpoint)
     
     # Training summary
     print(f"\n✅ TRAINING COMPLETE!")

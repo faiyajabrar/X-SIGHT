@@ -80,6 +80,11 @@ class UpBlock(nn.Module):
         x = self.up(x)
         if skip is not None:
             skip = self.attn(x, skip)
+            
+            # Ensure spatial dimensions match for concatenation (handles progressive resizing)
+            if skip.shape[-2:] != x.shape[-2:]:
+                skip = F.interpolate(skip, size=x.shape[-2:], mode='bilinear', align_corners=False)
+            
             x = torch.cat([skip, x], dim=1)
         x = self.conv(x)
         return x
