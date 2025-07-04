@@ -53,8 +53,19 @@ class AttentionBlock(nn.Module):
     def forward(self, g, x):
         g1 = self.W_g(g)
         x1 = self.W_x(x)
+        
+        # Ensure spatial dimensions match for addition
+        if g1.shape[-2:] != x1.shape[-2:]:
+            # Interpolate g1 to match x1's spatial dimensions
+            g1 = F.interpolate(g1, size=x1.shape[-2:], mode='bilinear', align_corners=False)
+        
         psi = self.relu(g1 + x1)
         psi = self.psi(psi)
+        
+        # Ensure psi matches x's spatial dimensions for multiplication
+        if psi.shape[-2:] != x.shape[-2:]:
+            psi = F.interpolate(psi, size=x.shape[-2:], mode='bilinear', align_corners=False)
+        
         return x * psi
 
 
@@ -80,9 +91,15 @@ class UpBlock(nn.Module):
 class AttentionUNet(nn.Module):
     """U-Net with ResNet34 encoder and attention gates."""
 
-    def __init__(self, n_classes: int = 6, dropout: float = 0.1, pretrained: bool = True):
+    def __init__(self, n_classes: int = 6, dropout: float = 0.1, pretrained: bool = True, 
+                 gradient_checkpointing: bool = False):
         super().__init__()
         enc = models.resnet34(pretrained=pretrained)
+        
+        # Store config for summary
+        self.n_classes = n_classes
+        self.dropout = dropout
+        self.gradient_checkpointing = gradient_checkpointing
 
         # Encoder layers we will use as feature maps
         self.enc0 = nn.Sequential(enc.conv1, enc.bn1, enc.relu)  # 64, /2
@@ -103,6 +120,10 @@ class AttentionUNet(nn.Module):
 
         # initialize weights for decoder
         self._init_weights()
+        
+        # Enable gradient checkpointing if requested (saves memory at cost of speed)
+        if gradient_checkpointing:
+            self._enable_gradient_checkpointing()
 
     def _init_weights(self):
         for m in [self.up4, self.up3, self.up2, self.up1, self.final_conv]:
@@ -113,7 +134,24 @@ class AttentionUNet(nn.Module):
                     nn.init.constant_(layer.weight, 1)
                     nn.init.constant_(layer.bias, 0)
 
+    def _enable_gradient_checkpointing(self):
+        """Enable gradient checkpointing for memory efficiency."""
+        try:
+            from torch.utils.checkpoint import checkpoint
+            self._checkpoint = checkpoint
+            print("[AttentionUNet] Gradient checkpointing enabled for memory efficiency.")
+        except ImportError:
+            print("[AttentionUNet] Warning: gradient checkpointing not available.")
+            self.gradient_checkpointing = False
+
     def forward(self, x):
+        if self.gradient_checkpointing and self.training:
+            return self._forward_with_checkpointing(x)
+        else:
+            return self._forward_normal(x)
+    
+    def _forward_normal(self, x):
+        """Standard forward pass."""
         # Encoder
         e0 = self.enc0(x)        # (B,64,H/2,W/2)
         e0p = self.pool0(e0)     # (B,64,H/4,W/4)
@@ -130,6 +168,26 @@ class AttentionUNet(nn.Module):
 
         out = F.interpolate(d1, scale_factor=2, mode='bilinear', align_corners=False)  # (B,64,H,W)
         out = self.final_conv(out)  # (B,n_classes,H,W)
+        return out
+    
+    def _forward_with_checkpointing(self, x):
+        """Forward pass with gradient checkpointing for memory efficiency."""
+        # Encoder with checkpointing
+        e0 = self._checkpoint(self.enc0, x, use_reentrant=False)
+        e0p = self.pool0(e0)
+        e1 = self._checkpoint(self.enc1, e0p, use_reentrant=False)
+        e2 = self._checkpoint(self.enc2, e1, use_reentrant=False)
+        e3 = self._checkpoint(self.enc3, e2, use_reentrant=False)
+        e4 = self._checkpoint(self.enc4, e3, use_reentrant=False)
+
+        # Decoder with checkpointing
+        d4 = self._checkpoint(self.up4, e4, e3, use_reentrant=False)
+        d3 = self._checkpoint(self.up3, d4, e2, use_reentrant=False)
+        d2 = self._checkpoint(self.up2, d3, e1, use_reentrant=False)
+        d1 = self._checkpoint(self.up1, d2, e0, use_reentrant=False)
+
+        out = F.interpolate(d1, scale_factor=2, mode='bilinear', align_corners=False)
+        out = self.final_conv(out)
         return out
 
     # --------------------------------------------------

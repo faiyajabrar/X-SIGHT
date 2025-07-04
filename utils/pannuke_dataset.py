@@ -1,67 +1,58 @@
+from __future__ import annotations
 import os
 from glob import glob
-from typing import List, Tuple, Optional, Sequence, Union
+from typing import List, Tuple, Optional, Sequence, Union, Any
 
 import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from torchvision import transforms as T
-from torchvision.transforms import functional as F
-
-try:
-    import albumentations as A
-    from albumentations.pytorch import ToTensorV2
-except ImportError:
-    # Albumentations is optional – create a minimal stub so that type annotations and runtime
-    # isinstance checks do not fail when the library is absent.
-
-    class _AlbumentationsStub:
-        class Compose:  # dummy type placeholder
-            def __init__(self, *args, **kwargs):
-                pass
-
-        class NoOp:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            def __call__(self, **kwargs):
-                return kwargs
-
-    A = _AlbumentationsStub()
-    ToTensorV2 = None  # type: ignore
-
 import matplotlib.pyplot as plt
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
-# Optional staintools import (not required anymore)
-try:
-    import staintools  # type: ignore
-except ImportError:
-    staintools = None
 
-# Only define StainNormalize if a real Albumentations module is available (i.e., has ImageOnlyTransform)
-if A is not None and hasattr(A, "ImageOnlyTransform"):
-    class SimpleStainNormalize(A.ImageOnlyTransform):
-        """Performs simple colour normalisation by matching per-channel mean and std to a reference.
+class CLAHETransform(A.ImageOnlyTransform):
+    """CLAHE preprocessing."""
+    
+    def __init__(self, clip_limit=2.0, tile_grid_size=(16, 16), always_apply=True, p=1.0):
+        super().__init__(always_apply=always_apply, p=p)
+        self.clip_limit = clip_limit
+        self.tile_grid_size = tile_grid_size
+    
+    def apply(self, img: np.ndarray, **params) -> np.ndarray:
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        
+        lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+        l_channel, a, b = cv2.split(lab)
+        
+        clahe = cv2.createCLAHE(clipLimit=self.clip_limit, tileGridSize=self.tile_grid_size)
+        cl = clahe.apply(l_channel)
+        
+        enhanced_lab = cv2.merge((cl, a, b))
+        enhanced_rgb = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2RGB)
+        
+        return enhanced_rgb
 
-        This is not as sophisticated as Macenko but provides an approximation without heavy deps.
-        """
 
-        def __init__(self, reference: np.ndarray, always_apply: bool = False, p: float = 0.5):
-            super().__init__(always_apply=always_apply, p=p)
+class ZScoreTransform(A.ImageOnlyTransform):
+    """Z-score normalization."""
+    
+    def __init__(self, always_apply=True, p=1.0):
+        super().__init__(always_apply=always_apply, p=p)
+    
+    def apply(self, img: np.ndarray, **params) -> np.ndarray:
+        img = img.astype(np.float32)
+        mean = np.mean(img, axis=(0, 1), keepdims=True)
+        std = np.std(img, axis=(0, 1), keepdims=True)
+        
+        std = np.maximum(std, 1e-6)
+        normalized_image = (img - mean) / std
+        normalized_image = np.clip(normalized_image, -10.0, 10.0)
+        
+        return normalized_image
 
-            # compute ref stats in float domain
-            ref = reference.astype(np.float32) / 255.0
-            self.ref_mean = ref.reshape(-1, 3).mean(0)
-            self.ref_std = ref.reshape(-1, 3).std(0) + 1e-6  # avoid div0
-
-        def apply(self, img: np.ndarray, **params):  # type: ignore[override]
-            x = img.astype(np.float32) / 255.0
-            mean = x.reshape(-1, 3).mean(0)
-            std = x.reshape(-1, 3).std(0) + 1e-6
-            x = (x - mean) / std * self.ref_std + self.ref_mean
-            x = np.clip(x, 0, 1) * 255.0
-            return x.astype(np.uint8)
 
 class PanNukeDataset(Dataset):
     """PyTorch Dataset for the PanNuke nucleus segmentation dataset.
@@ -70,51 +61,46 @@ class PanNukeDataset(Dataset):
     each containing image patches (.png) and their corresponding 6-channel masks (.npy).
 
     This dataset implementation concatenates the three parts automatically so that they can
-    be treated as a single dataset. It also performs common preprocessing steps such as
-    resizing, normalisation and (optional) data augmentation.
+    be treated as a single dataset. It includes built-in preprocessing transforms and 
+    returns PyTorch tensors ready for training.
     """
-
-    # ImageNet statistics for RGB normalisation (used by default)
-    IMAGENET_MEAN = [0.485, 0.456, 0.406]
-    IMAGENET_STD = [0.229, 0.224, 0.225]
 
     def __init__(
         self,
         root: str,
-        parts: Sequence[str] = ("part1", "part2", "part3"),
-        image_dirname: str = "images",
-        mask_dirname: str = "masks",
-        img_size: Tuple[int, int] = (256, 256),
-        normalise: bool = True,
-        transforms: Optional[Union[T.Compose, A.Compose]] = None,
+        parts: Sequence[str] = ("Part 1", "Part 2", "Part 3"),
+        image_dirname: str = "Images",
+        mask_dirname: str = "Masks",
+        augmentations: Optional[A.Compose] = None,
+        validate_dataset: bool = True,
     ) -> None:
         """Parameters
         ----------
         root : str
             Root directory that contains the PanNuke parts (e.g. ``/path/to/PanNuke``).
-        parts : sequence of str, default ("part1", "part2", "part3")
+        parts : sequence of str, default ("Part 1", "Part 2", "Part 3")
             The sub-directories to concatenate. You can override this to use a subset.
-        image_dirname : str, default "images"
+        image_dirname : str, default "Images"
             Name of the directory inside each part that holds RGB image patches.
-        mask_dirname : str, default "masks"
+        mask_dirname : str, default "Masks"
             Name of the directory inside each part that holds corresponding *6-channel* masks.
-        img_size : (int, int), default (256, 256)
-            Spatial size ``(height, width)`` to which images and masks will be resized.
-        normalise : bool, default True
-            If ``True``, images are normalised using ImageNet statistics.
-        transforms : torchvision.transforms.Compose | albumentations.Compose | None, optional
-            Custom transform pipeline. If supplied, the internal resize/normalise/augment is
-            *skipped* and responsibility is handed to the caller.
+        augmentations : A.Compose, optional
+            Additional augmentations to apply (rotation, flips, etc.). Will be applied before
+            the built-in CLAHE + Z-score normalization.
+        validate_dataset : bool, default True
+            If ``True``, performs basic validation checks on dataset integrity.
         """
         super().__init__()
 
-        self.img_size = img_size
-        self.normalise = normalise
-        self.has_albu = (ToTensorV2 is not None)
-        if not self.has_albu:
-            raise ImportError(
-                "Mandatory augmentations require Albumentations. Please install with: pip install albumentations[imgaug]==1.3.1"
-            )
+        self.augmentations = augmentations
+
+        # Built-in preprocessing transforms (applied to all samples)
+        self.base_transforms = A.Compose([
+            A.Resize(256, 256),
+            CLAHETransform(),
+            ZScoreTransform(),
+            ToTensorV2(transpose_mask=True)
+        ])
 
         self.image_paths: List[str] = []
         self.mask_paths: List[str] = []
@@ -129,7 +115,7 @@ class PanNukeDataset(Dataset):
         self._parts_masks: List[np.ndarray] = []   # list of memmap arrays (N, H, W, 6)
 
         self._index_map: List[Tuple[int, int]] = []  # dataset idx -> (part_idx, local_idx)
-
+        
         for p_idx, p in enumerate(parts):
             part_dir = os.path.join(root, p)
             if not os.path.isdir(part_dir):
@@ -196,43 +182,47 @@ class PanNukeDataset(Dataset):
         if self.storage_mode is None:
             raise RuntimeError("Dataset initialisation failed – no data found.")
 
-        # Build a simple default transformation pipeline if none supplied.
-        if transforms is None:
-            if self.has_albu:
-                # choose a reference image for stain normalisation (first image found)
-                ref_img_path = None
-                if self.storage_mode == "files":
-                    ref_img_path = self.image_paths[0]
-                    ref_img = cv2.cvtColor(cv2.imread(ref_img_path), cv2.COLOR_BGR2RGB)
-                else:
-                    # aggregated – access first memmap entry
-                    ref_img = self._parts_images[0][0]
+        # Validate dataset integrity if requested
+        if validate_dataset:
+            self._validate_dataset()
 
-                stain_norm_transform = SimpleStainNormalize(ref_img, p=0.5) if A is not None else A.NoOp()
+        print(f"[PanNukeDataset] Loaded {len(self)} samples using {self.storage_mode} storage mode.")
+        print(f"[PanNukeDataset] Built-in transforms: CLAHE + Z-score + ToTensor")
 
-                self.transforms = A.Compose(
-                    [
-                        A.Resize(*img_size, interpolation=cv2.INTER_CUBIC),
-                        A.HorizontalFlip(p=0.5),
-                        A.VerticalFlip(p=0.5),
-                        A.Rotate(limit=180, border_mode=cv2.BORDER_CONSTANT, p=0.7),
-                        stain_norm_transform,
-                        A.Normalize(mean=self.IMAGENET_MEAN, std=self.IMAGENET_STD) if normalise else A.NoOp(),
-                        ToTensorV2(transpose_mask=True),
-                    ],
-                    additional_targets={"mask": "mask"},
-                )
-            else:
-                # Fallback to torchvision transforms (deterministic, no augmentations)
-                t_list = [
-                    T.Resize(img_size, interpolation=T.InterpolationMode.BICUBIC),
-                    T.ToTensor(),
-                ]
-                if normalise:
-                    t_list.append(T.Normalize(mean=self.IMAGENET_MEAN, std=self.IMAGENET_STD))
-                self.transforms = T.Compose(t_list)
-        else:
-            self.transforms = transforms
+    def _validate_dataset(self):
+        """Perform basic validation checks on the dataset."""
+        print(f"[PanNukeDataset] Validating dataset integrity...")
+        
+        # Check we have data
+        if len(self) == 0:
+            raise ValueError("Dataset is empty. Check your data paths.")
+        
+        # Sample a few items to check format
+        sample_indices = [0, len(self) // 2, len(self) - 1] if len(self) > 2 else [0]
+        
+        for idx in sample_indices:
+            try:
+                sample = self[idx]
+                img, mask = sample['image'], sample['mask']
+                
+                # Check image format (now tensors)
+                if not isinstance(img, torch.Tensor) or img.ndim != 3:
+                    raise ValueError(f"Invalid image format at index {idx}. Expected 3D tensor, got {type(img)} with shape {getattr(img, 'shape', 'N/A')}")
+                
+                # Check mask format  
+                if not isinstance(mask, torch.Tensor) or mask.ndim != 2:
+                    raise ValueError(f"Invalid mask format at index {idx}. Expected 2D tensor, got {type(mask)} with shape {getattr(mask, 'shape', 'N/A')}")
+                
+                # Check class values in mask
+                unique_classes = torch.unique(mask).tolist()
+                invalid_classes = [c for c in unique_classes if c < 0 or c > 5]
+                if invalid_classes:
+                    raise ValueError(f"Invalid class values {invalid_classes} found in mask at index {idx}. Expected values in [0, 5].")
+                    
+            except Exception as e:
+                raise RuntimeError(f"Dataset validation failed at index {idx}: {str(e)}")
+        
+        print(f"[PanNukeDataset] Validation passed. Dataset appears healthy.")
 
     # -------------------------------------------------- #
     def __len__(self) -> int:
@@ -243,21 +233,51 @@ class PanNukeDataset(Dataset):
 
     # -------------------------------------------------- #
     def _mask_to_class_map(self, mask: np.ndarray) -> np.ndarray:
-        """Convert a 6-channel binary mask to a single-channel class label map.
+        """Convert a 6-channel instance‐level mask to a single-channel semantic label map.
 
-        Each channel encodes one class. The background (no nucleus) is encoded where all
-        channels equal 0. We use ``argmax`` to obtain the *dominant* class per pixel, then
-        shift class indices by +1 so that 0 can be reserved for background.
+        Channel layout (PanNuke *X-SIGHT convention*):
+            0 – Neoplastic
+            1 – Inflammatory
+            2 – Connective
+            3 – Dead
+            4 – Epithelial
+            5 – Background (binary mask; 1 means *background*, 0 otherwise)
+
+        Important — difference from the previous implementation
+        --------------------------------------------------------
+        • **Channel-5 is now treated as an *explicit* background indicator.**
+          There is *no* separate "tissue" channel.
+        • We therefore **do NOT** infer background from "all nucleus channels are zero".
+
+        Conversion procedure
+        --------------------
+        1. Determine pixels that belong to background using channel-5.
+        2. For the remaining pixels consider only the first five channels; any non-zero
+           value indicates presence of that nucleus class.
+        3. The semantic class for a foreground pixel is the `argmax` across the first five
+           binary channels **plus 1** (to map 0-based indices → label IDs 1-5).
+
+        Returns
+        -------
+        uint8 ndarray of shape (H, W) with labels in the range 0-5, where 0 denotes
+        background and 1-5 are the five nucleus classes.
         """
         if mask.ndim != 3 or mask.shape[2] != 6:
-            raise ValueError("Expected mask shape (H, W, 6)")
+            raise ValueError("PanNuke masks must be (H,W,6).")
 
-        class_map = np.argmax(mask, axis=2).astype(np.uint8)  # (H, W)
-        # Zero everywhere but >0 where any channel is active
-        background = (mask.sum(axis=2) == 0)
-        class_map += 1  # shift so that background would be class 1, temporarily
-        class_map[background] = 0  # set background
-        return class_map  # dtype uint8, values 0-6
+        # Binary background mask from channel-5
+        background_mask = mask[:, :, 5] > 0
+
+        # Binary presence maps for the five nucleus channels
+        nuc_bin = (mask[:, :, :5] > 0).astype(np.uint8)
+
+        # Resolve class for foreground pixels (those not marked as background)
+        class_map = np.argmax(nuc_bin, axis=2).astype(np.uint8) + 1  # 1-5
+
+        # Apply background where indicated
+        class_map[background_mask] = 0
+
+        return class_map
 
     # -------------------------------------------------- #
     def __getitem__(self, idx: int):
@@ -290,65 +310,64 @@ class PanNukeDataset(Dataset):
             image = imgs_arr[local_idx]
             mask = masks_arr[local_idx]
 
-        # Ensure contiguous memory layout which some transforms expect
-        image = np.ascontiguousarray(image)
+        # Ensure contiguous memory layout and proper data types
+        image = np.ascontiguousarray(image).astype(np.uint8)
         mask = np.ascontiguousarray(mask)
 
         # Convert masks to class map
         class_map = self._mask_to_class_map(mask)
 
-        # Apply transforms
-        if self.has_albu and isinstance(self.transforms, A.Compose):
-            transformed = self.transforms(image=image, mask=class_map)
-            image_t = transformed["image"]  # already tensor
-            mask_t = transformed["mask"].long()  # ToTensorV2 handles uint8->tensor
-        else:  # torchvision transforms
-            image_pil = F.to_pil_image(image)
-            image_t = self.transforms(image_pil)
-            # Resize mask via nearest
-            mask_resized = cv2.resize(
-                class_map,
-                self.img_size[::-1],
-                interpolation=cv2.INTER_NEAREST,
-            )
-            mask_t = torch.from_numpy(mask_resized).long()
+        # Apply optional augmentations first (if provided)
+        if self.augmentations is not None:
+            augmented = self.augmentations(image=image, mask=class_map)
+            image, class_map = augmented["image"], augmented["mask"]
 
-        return {"image": image_t, "mask": mask_t}
+        # Apply built-in preprocessing transforms (CLAHE + Z-score + ToTensor)
+        transformed = self.base_transforms(image=image, mask=class_map)
+        
+        # Convert mask to LongTensor for F.one_hot compatibility
+        transformed["mask"] = transformed["mask"].long()
+        
+        return {"image": transformed["image"], "mask": transformed["mask"]}
 
     # -------------------------------------------------- #
     def visualise(self, idx: int):
-        """Render the image and its corresponding mask for quick visual inspection."""
+        """Render the raw image and its corresponding mask for quick visual inspection."""
         sample = self[idx]
-        img = sample["image"].cpu()
-        mask = sample["mask"].cpu()
+        img = sample["image"]
+        mask = sample["mask"]
 
-        if img.ndim == 3 and img.shape[0] in (1, 3):
-            img_np = img.numpy()
-            img_np = np.transpose(img_np, (1, 2, 0))  # C, H, W -> H, W, C
-            if self.normalise:
-                img_np = img_np * np.array(self.IMAGENET_STD) + np.array(self.IMAGENET_MEAN)
-                img_np = np.clip(img_np, 0, 1)
+        # Handle both numpy arrays and tensors
+        if isinstance(img, torch.Tensor):
+            img = img.cpu().numpy()
+            if img.ndim == 3 and img.shape[0] in (1, 3):
+                img = np.transpose(img, (1, 2, 0))  # C, H, W -> H, W, C
+            # Handle normalized images by rescaling to [0, 1]
+            img = (img - img.min()) / (img.max() - img.min() + 1e-7)
+            img = np.clip(img, 0, 1)
         else:
-            raise RuntimeError("Unexpected image tensor shape for visualisation")
+            # Raw numpy array - normalize to [0, 1]
+            img = img.astype(np.float32) / 255.0
 
-        mask_np = mask.numpy()
+        if isinstance(mask, torch.Tensor):
+            mask = mask.cpu().numpy()
+
         # Assign distinct colours to classes (0 background)
         palette = np.array(
             [
-                [0, 0, 0],  # background – black
-                [255, 0, 0],
-                [0, 255, 0],
-                [0, 0, 255],
-                [255, 255, 0],
-                [255, 0, 255],
-                [0, 255, 255],
+                [0, 0, 0],        # 0: background – black
+                [255, 0, 0],      # 1: Neoplastic – red
+                [0, 255, 0],      # 2: Inflammatory – green
+                [0, 0, 255],      # 3: Connective – blue
+                [255, 255, 0],    # 4: Dead – yellow
+                [255, 0, 255],    # 5: Epithelial – magenta
             ],
             dtype=np.uint8,
         )
-        mask_rgb = palette[mask_np]
+        mask_rgb = palette[mask]
 
         fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-        axs[0].imshow(img_np)
+        axs[0].imshow(img)
         axs[0].set_title("Image")
         axs[0].axis("off")
         axs[1].imshow(mask_rgb)
@@ -359,7 +378,7 @@ class PanNukeDataset(Dataset):
 
     # -------------------------------------------------- #
     def dataset_summary(self):
-        """Return statistics: per-part counts, total after concat (original), total effective (same due to on-the-fly augmentation)."""
+        """Return statistics: per-part counts, total after concat."""
         part_counts = {}
         # counts stored as attributes _count_part_{i}
         i = 0
@@ -368,6 +387,5 @@ class PanNukeDataset(Dataset):
             i += 1
 
         total_concat = sum(part_counts.values())
-        total_after_aug = total_concat  # on-the-fly augmentation keeps count unchanged
 
-        return part_counts, total_concat, total_after_aug 
+        return part_counts, total_concat 
