@@ -13,7 +13,9 @@ echo - NO experimental features (safe fallback option)
 echo.
 
 echo Starting BACKUP training with proven configuration...
-python training/train_backup.py --lr 2e-4 --dropout 0.1 --batch_size 16 --epochs 50 --gpus 1
+echo.
+echo 📚 Using virtual environment Python...
+venv\Scripts\python.exe training/train_backup.py --lr 2e-4 --dropout 0.1 --batch_size 16 --epochs 50
 
 echo.
 echo Backup training complete! Expected results:

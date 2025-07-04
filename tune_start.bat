@@ -18,8 +18,10 @@ echo ⏰ Expected time: 2-4 hours (depending on GPU)
 echo 📊 Results continuously saved to tune_runs/
 echo ⏹️  Use Ctrl+C to stop early if satisfied
 echo.
+echo 📚 Using virtual environment Python...
+echo.
 
-python training/tune_advanced.py ^
+venv\Scripts\python.exe training/tune_advanced.py ^
     --n_trials 100 ^
     --study_name attention_unet_advanced ^
     --n_jobs 1

@@ -21,8 +21,10 @@ echo 🎯 EXPECTED PERFORMANCE:
 echo   Validation Dice: 0.6+ (vs 0.34 baseline = 76%+ improvement)
 echo   Stable 32-bit training without mixed precision issues
 echo.
+echo 📚 Using virtual environment Python...
+echo.
 
-python training/train.py ^
+venv\Scripts\python.exe training/train.py ^
     --lr 3e-4 ^
     --dropout 0.1 ^
     --batch_size 16 ^

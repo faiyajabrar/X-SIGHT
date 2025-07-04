@@ -13,8 +13,10 @@ echo ⏱️  Each trial: 10 epochs (vs 60 in full training)
 echo 📊 Results continuously saved to tune_runs/
 echo 🎯 Target: 100 total trials (original + additional)
 echo.
+echo 📚 Using virtual environment Python...
+echo.
 
-python training/tune_advanced.py ^
+venv\Scripts\python.exe training/tune_advanced.py ^
     --n_trials 100 ^
     --study_name attention_unet_advanced ^
     --n_jobs 1 ^
