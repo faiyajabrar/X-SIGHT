@@ -1,0 +1,32 @@
+{
+  "trial_number": 281,
+  "best_score": 0.5839976668357849,
+  "parameters": {
+    "lr": 0.0002111129254591338,
+    "dropout": 0.09033319919875066,
+    "weight_decay": 0.0010389825097758603,
+    "grad_clip_val": 1.8325991114726168,
+    "mixup_alpha": 0.14674739008785997,
+    "ema_decay": 0.9950701440179083,
+    "start_size": 96,
+    "end_size": 224,
+    "focal_alpha": 0.606761832749497,
+    "focal_gamma": 2.6560849116282297,
+    "dice_weight": 0.35154419269036175,
+    "focal_weight": 0.3935862644061457,
+    "boundary_weight": 0.17406742552138846,
+    "pct_start": 0.25852505686742216,
+    "div_factor": 10,
+    "final_div_factor": 631,
+    "use_mixup": false,
+    "use_ema": true,
+    "progressive_resize": true
+  },
+  "analysis_date": "2025-01-17",
+  "excluded_trials": [
+    0,
+    2,
+    4
+  ],
+  "total_valid_trials": 97
+}

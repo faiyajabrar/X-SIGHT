@@ -73,6 +73,7 @@ class PanNukeDataset(Dataset):
         mask_dirname: str = "Masks",
         augmentations: Optional[A.Compose] = None,
         validate_dataset: bool = True,
+        base_size: int = 256,
     ) -> None:
         """Parameters
         ----------
@@ -89,18 +90,26 @@ class PanNukeDataset(Dataset):
             the built-in CLAHE + Z-score normalization.
         validate_dataset : bool, default True
             If ``True``, performs basic validation checks on dataset integrity.
+        base_size : int, default 256
+            Base size for resizing images. Can be overridden for progressive resizing.
         """
         super().__init__()
 
         self.augmentations = augmentations
+        self.base_size = base_size
 
         # Built-in preprocessing transforms (applied to all samples)
-        self.base_transforms = A.Compose([
-            A.Resize(256, 256),
+        transforms = []
+        if base_size is not None:
+            transforms.append(A.Resize(base_size, base_size))
+        
+        transforms.extend([
             CLAHETransform(),
             ZScoreTransform(),
             ToTensorV2(transpose_mask=True)
         ])
+        
+        self.base_transforms = A.Compose(transforms)
 
         self.image_paths: List[str] = []
         self.mask_paths: List[str] = []
@@ -272,9 +281,15 @@ class PanNukeDataset(Dataset):
         nuc_bin = (mask[:, :, :5] > 0).astype(np.uint8)
 
         # Resolve class for foreground pixels (those not marked as background)
-        class_map = np.argmax(nuc_bin, axis=2).astype(np.uint8) + 1  # 1-5
+        # The argmax of a zero vector is 0. We add 1 to map to labels 1-5.
+        class_map = np.argmax(nuc_bin, axis=2).astype(np.uint8) + 1
 
-        # Apply background where indicated
+        # Correctly handle pixels that are not background but have no nucleus activity.
+        # These should be background (class 0), not class 1 (Neoplastic).
+        no_nucleus_mask = (nuc_bin.sum(axis=2) == 0)
+        class_map[no_nucleus_mask] = 0
+
+        # Apply explicit background where indicated
         class_map[background_mask] = 0
 
         return class_map
@@ -388,4 +403,4 @@ class PanNukeDataset(Dataset):
 
         total_concat = sum(part_counts.values())
 
-        return part_counts, total_concat 
+        return part_counts, total_concat

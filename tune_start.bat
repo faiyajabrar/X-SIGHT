@@ -12,13 +12,17 @@ echo   🎨 Progressive training strategies
 echo   📱 Advanced features (MixUp, EMA, etc.)
 echo   🔧 Loss function weights and parameters
 echo.
-echo ⏱️  Each trial: 10 epochs (vs 60 in full training)
+echo ⏱️  Each trial: 24 epochs (vs 120 in full training)
 echo 🎯 Target: 100 trials total
-echo ⏰ Expected time: 2-4 hours (depending on GPU)
+echo ⏰ Expected time: 5-8 hours (depending on GPU)
 echo 📊 Results continuously saved to tune_runs/
 echo ⏹️  Use Ctrl+C to stop early if satisfied
 echo.
 echo 📚 Using virtual environment Python...
+echo.
+
+set CUDA_LAUNCH_BLOCKING=1
+echo 🐛 CUDA_LAUNCH_BLOCKING=1 enabled for precise error tracking.
 echo.
 
 venv\Scripts\python.exe training/tune_advanced.py ^
@@ -37,4 +41,4 @@ echo.
 echo 🎯 Use the best parameters in your training script!
 echo 💡 To continue optimization, use tune_resume.bat
 echo.
-pause 
+pause

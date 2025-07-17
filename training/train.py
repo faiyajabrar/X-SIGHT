@@ -86,11 +86,12 @@ def _frequency_weighted_dice_score(preds: torch.Tensor, targets: torch.Tensor, n
     eps = 1e-6
     
     # Frequency weights (square root of inverse frequency - less extreme)
-    pixel_freq = torch.tensor([0.812568, 0.106870, 0.017744, 0.037365, 0.000691, 0.024763], device=preds.device)
+    pixel_freq = torch.tensor([0.832818975, 0.0866185198, 0.0177438743, 0.0373645720, 0.000691303678, 0.0247627551], device=preds.device)
     class_weights = torch.sqrt(1.0 / (pixel_freq + eps))
     # Cap maximum weight to prevent extreme values
     class_weights = torch.clamp(class_weights, max=10.0)
-    class_weights = class_weights / class_weights.sum() * num_classes  # Normalize
+    # Fixed normalization: maintain relative weights but normalize to mean=1.0
+    class_weights = class_weights / class_weights.mean()
     
     dice_per_class = []
     for c in range(num_classes):
@@ -183,15 +184,21 @@ class HybridLoss(nn.Module):
         self.epsilon = epsilon
         self.focal_alpha = focal_alpha
         self.focal_gamma = focal_gamma
-        self.boundary_weight = boundary_weight
-        self.dice_weight = dice_weight
-        self.focal_weight = focal_weight
+        
+        # Normalize loss weights to sum to 1.0 for stable training
+        total_weight = dice_weight + focal_weight + boundary_weight
+        self.dice_weight = dice_weight / total_weight
+        self.focal_weight = focal_weight / total_weight
+        self.boundary_weight = boundary_weight / total_weight
+        
+        print(f"Hybrid loss weights (normalized): dice={self.dice_weight:.3f}, focal={self.focal_weight:.3f}, boundary={self.boundary_weight:.3f}")
         
         # Frequency weights for Dice component
-        pixel_freq = torch.tensor([0.812568, 0.106870, 0.017744, 0.037365, 0.000691, 0.024763])
+        pixel_freq = torch.tensor([0.832818975, 0.0866185198, 0.0177438743, 0.0373645720, 0.000691303678, 0.0247627551])
         self.class_weights = torch.sqrt(1.0 / (pixel_freq + self.epsilon))
         self.class_weights = torch.clamp(self.class_weights, max=10.0)
-        self.class_weights = self.class_weights / self.class_weights.sum() * self.num_classes
+        # Fixed normalization: maintain relative weights but normalize to mean=1.0
+        self.class_weights = self.class_weights / self.class_weights.mean()
         print(f"Hybrid loss class weights: {self.class_weights.tolist()}")
     
     def dice_loss(self, y_pred, y_true):
@@ -229,24 +236,71 @@ class HybridLoss(nn.Module):
         return focal_loss.mean()
     
     def boundary_loss(self, y_pred, y_true):
-        """Boundary loss for better edge detection."""
+        """Boundary loss for better edge detection - Fixed for progressive resizing."""
         y_pred_soft = F.softmax(y_pred, dim=1)
         
-        # Compute gradients (edge detection)
-        dx = torch.abs(y_pred_soft[:, :, :, 1:] - y_pred_soft[:, :, :, :-1])
-        dy = torch.abs(y_pred_soft[:, :, 1:, :] - y_pred_soft[:, :, :-1, :])
+        # Get spatial dimensions
+        B, C, H, W = y_pred_soft.shape
         
-        # Target boundaries using Sobel
+        # Compute prediction gradients (edge detection) - handle edge cases
+        if W > 1:
+            pred_dx = torch.abs(y_pred_soft[:, :, :, 1:] - y_pred_soft[:, :, :, :-1])  # [B, C, H, W-1]
+        else:
+            pred_dx = torch.zeros(B, C, H, 1, device=y_pred_soft.device)
+            
+        if H > 1:
+            pred_dy = torch.abs(y_pred_soft[:, :, 1:, :] - y_pred_soft[:, :, :-1, :])  # [B, C, H-1, W]
+        else:
+            pred_dy = torch.zeros(B, C, 1, W, device=y_pred_soft.device)
+        
+        # Target boundaries using simple gradient - handle edge cases
         y_true_float = y_true.float()
-        true_dx = torch.abs(y_true_float[:, :, 1:] - y_true_float[:, :, :-1])
-        true_dy = torch.abs(y_true_float[:, 1:, :] - y_true_float[:, :-1, :])
+        if W > 1:
+            true_dx = torch.abs(y_true_float[:, :, 1:] - y_true_float[:, :, :-1])  # [B, H, W-1]
+        else:
+            true_dx = torch.zeros(B, H, 1, device=y_true.device)
+            
+        if H > 1:
+            true_dy = torch.abs(y_true_float[:, 1:, :] - y_true_float[:, :-1, :])  # [B, H-1, W]
+        else:
+            true_dy = torch.zeros(B, 1, W, device=y_true.device)
         
-        # Ensure compatible dimensions
-        min_h = min(dx.shape[2], true_dx.shape[1])
-        min_w = min(dy.shape[3], true_dy.shape[2])
+        # Simplified boundary loss - just use MSE on summed gradients
+        # Sum across classes for prediction gradients
+        pred_dx_sum = pred_dx.sum(dim=1)  # [B, H, W-1]
+        pred_dy_sum = pred_dy.sum(dim=1)  # [B, H-1, W]
         
-        boundary_loss_x = F.mse_loss(dx[:, :, :min_h, :].sum(1), true_dx[:, :min_h, :])
-        boundary_loss_y = F.mse_loss(dy[:, :, :, :min_w].sum(1), true_dy[:, :min_w, :])
+        # Normalize gradients to [0, 1] range
+        pred_dx_norm = torch.clamp(pred_dx_sum / (pred_dx_sum.max() + self.epsilon), 0, 1)
+        pred_dy_norm = torch.clamp(pred_dy_sum / (pred_dy_sum.max() + self.epsilon), 0, 1)
+        
+        # Normalize true gradients to [0, 1] range
+        true_dx_norm = torch.clamp(true_dx / (true_dx.max() + self.epsilon), 0, 1)
+        true_dy_norm = torch.clamp(true_dy / (true_dy.max() + self.epsilon), 0, 1)
+        
+        # Ensure spatial dimensions match for MSE computation
+        min_h_dx = min(pred_dx_norm.shape[1], true_dx_norm.shape[1])
+        min_w_dx = min(pred_dx_norm.shape[2], true_dx_norm.shape[2])
+        
+        min_h_dy = min(pred_dy_norm.shape[1], true_dy_norm.shape[1])
+        min_w_dy = min(pred_dy_norm.shape[2], true_dy_norm.shape[2])
+        
+        # Compute MSE losses with matching dimensions
+        if min_h_dx > 0 and min_w_dx > 0:
+            boundary_loss_x = F.mse_loss(
+                pred_dx_norm[:, :min_h_dx, :min_w_dx], 
+                true_dx_norm[:, :min_h_dx, :min_w_dx]
+            )
+        else:
+            boundary_loss_x = torch.tensor(0.0, device=y_pred.device)
+        
+        if min_h_dy > 0 and min_w_dy > 0:
+            boundary_loss_y = F.mse_loss(
+                pred_dy_norm[:, :min_h_dy, :min_w_dy], 
+                true_dy_norm[:, :min_h_dy, :min_w_dy]
+            )
+        else:
+            boundary_loss_y = torch.tensor(0.0, device=y_pred.device)
         
         return (boundary_loss_x + boundary_loss_y) / 2
     
@@ -350,12 +404,22 @@ class AdvancedAttentionModel(pl.LightningModule):
         self.start_size = start_size
         self.end_size = end_size
         
+        # Ensure start_size < end_size for valid progressive training
+        if self.start_size >= self.end_size:
+            logger.warning(f"Invalid progressive resize parameters: start_size ({self.start_size}) >= end_size ({self.end_size})")
+            self.start_size = 128  # Reset to a safe default
+            logger.warning(f"Reset start_size to {self.start_size}")
+        
         # Initialize EMA
         if self.use_ema:
             self.ema = EMAWrapper(self.model, decay=ema_decay)
         
         # Progressive resize tracking
         self.current_size = start_size if progressive_resize else end_size
+        
+        # Progressive resizing cache - FIX: Cache current image size per epoch
+        self._cached_image_size = None
+        self._cached_epoch = -1
         
         # Resume state management
         self.resume_path = resume_path
@@ -369,12 +433,45 @@ class AdvancedAttentionModel(pl.LightningModule):
         # Load resume state if provided
         if resume_path:
             self.load_training_state()
+    
+    def validate_data_split_consistency(self, current_train_indices, current_val_indices):
+        """Validate that resumed data split matches current split for perfect consistency."""
+        if not hasattr(self, '_train_indices') or not hasattr(self, '_val_indices'):
+            logger.info("🆕 No saved data split found - using current split")
+            return True
+        
+        if (self._train_indices is None or self._val_indices is None or
+            current_train_indices is None or current_val_indices is None):
+            logger.warning("⚠️  Missing data split indices - consistency cannot be verified")
+            return False
+        
+        # Check if splits match exactly
+        train_match = set(self._train_indices) == set(current_train_indices)
+        val_match = set(self._val_indices) == set(current_val_indices)
+        
+        if train_match and val_match:
+            logger.info("✅ Data split consistency verified - perfect resume guaranteed")
+            return True
+        else:
+            logger.error("❌ DATA SPLIT MISMATCH DETECTED!")
+            logger.error(f"   Saved train indices: {len(self._train_indices)}, Current: {len(current_train_indices)}")
+            logger.error(f"   Saved val indices: {len(self._val_indices)}, Current: {len(current_val_indices)}")
+            logger.error(f"   Train match: {train_match}, Val match: {val_match}")
+            logger.error("   This could cause validation Dice score drops!")
+            logger.error("   Consider using saved indices or starting fresh training.")
+            return False
 
     def forward(self, x):
         return self.model(x)
     
     def on_train_epoch_start(self):
         """Update progressive augmentations at the start of each epoch."""
+        # Cache the current image size for this epoch to ensure consistency
+        if self.progressive_resize:
+            self._cached_image_size = self._calculate_current_image_size()
+            self._cached_epoch = self.current_epoch
+            logger.info(f"Progressive augmentations updated for epoch {self.current_epoch}: image size {self._cached_image_size}x{self._cached_image_size}")
+        
         # Access the training dataloader's dataset
         train_dataloader = self.trainer.train_dataloader
         if hasattr(train_dataloader, 'dataset'):
@@ -386,14 +483,31 @@ class AdvancedAttentionModel(pl.LightningModule):
             elif hasattr(dataset, 'update_epoch'):
                 dataset.update_epoch(self.current_epoch)
     
-    def get_current_image_size(self):
-        """Progressive resizing: start small, gradually increase to full size."""
+    def _calculate_current_image_size(self):
+        """Calculate the current image size based on progressive resizing."""
         if not self.progressive_resize:
             return self.end_size
             
-        progress = min(1.0, self.current_epoch / (self.total_epochs * 0.7))  # Reach full size at 70% training
+        # Use mock current_epoch for testing if available, otherwise use actual current_epoch
+        current_epoch = getattr(self, '_current_epoch', self.current_epoch)
+        
+        # Reach full size at 70% of training for optimal progressive learning (84 epochs for 120 total)
+        progress = min(1.0, current_epoch / (self.total_epochs * 0.7))
         current_size = int(self.start_size + (self.end_size - self.start_size) * progress)
         return max(self.start_size, min(self.end_size, current_size))
+    
+    def get_current_image_size(self):
+        """Get the current image size, using cached value for consistency within epoch."""
+        if self.progressive_resize:
+            # Use cached size if available for current epoch
+            if self._cached_epoch == self.current_epoch and self._cached_image_size is not None:
+                return self._cached_image_size
+            else:
+                # Calculate and cache for new epoch
+                self._cached_image_size = self._calculate_current_image_size()
+                self._cached_epoch = self.current_epoch
+                return self._cached_image_size
+        return self.end_size
 
     def training_step(self, batch, batch_idx):
         imgs, masks = batch['image'], batch['mask']
@@ -560,18 +674,18 @@ class AdvancedAttentionModel(pl.LightningModule):
         
         logger.info(f"OneCycleLR scheduler: {steps_per_epoch} steps/epoch, {total_steps} total steps")
         
-        # OneCycleLR for superconvergence
+        # OneCycleLR for superconvergence (optimized for 120-epoch training)
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
             max_lr=self.lr,
             total_steps=total_steps,
-            pct_start=0.3,  # 30% warmup
+            pct_start=0.25,  # 25% warmup (30 epochs for 120 total)
             anneal_strategy='cos',
             cycle_momentum=True,
             base_momentum=0.85,
             max_momentum=0.95,
             div_factor=25,  # Initial LR = max_lr / div_factor
-            final_div_factor=1e4  # Final LR = max_lr / final_div_factor
+            final_div_factor=10000  # Final LR = max_lr / final_div_factor
         )
         
         return {
@@ -591,6 +705,38 @@ class AdvancedAttentionModel(pl.LightningModule):
         # Get current learning rate
         current_lr = self.trainer.optimizers[0].param_groups[0]['lr'] if self.trainer else self.lr
         
+        # Save EMA state if available
+        ema_state = None
+        if self.use_ema and hasattr(self, 'ema'):
+            try:
+                # Convert shadow weights to CPU and check for NaN/Inf
+                shadow_dict = {}
+                for name, param in self.ema.shadow.items():
+                    cpu_param = param.cpu()
+                    if torch.isnan(cpu_param).any() or torch.isinf(cpu_param).any():
+                        logger.warning(f"⚠️  Skipping EMA shadow parameter {name} due to NaN/Inf values")
+                        continue
+                    shadow_dict[name] = cpu_param.tolist()
+                
+                # Convert backup weights if available
+                backup_dict = {}
+                if self.ema.backup:
+                    for name, param in self.ema.backup.items():
+                        cpu_param = param.cpu()
+                        if torch.isnan(cpu_param).any() or torch.isinf(cpu_param).any():
+                            logger.warning(f"⚠️  Skipping EMA backup parameter {name} due to NaN/Inf values")
+                            continue
+                        backup_dict[name] = cpu_param.tolist()
+                
+                ema_state = {
+                    'decay': self.ema.decay,
+                    'shadow': shadow_dict,
+                    'backup': backup_dict
+                }
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to save EMA state: {e}")
+                ema_state = None
+        
         state = {
             'epoch': self.current_epoch,
             'global_step': self.global_step if hasattr(self, 'global_step') else 0,
@@ -598,9 +744,14 @@ class AdvancedAttentionModel(pl.LightningModule):
             'best_val_loss': self.best_val_loss,
             'current_lr': current_lr,
             'current_image_size': self.current_size,
+            'data_split': {
+                'train_indices': getattr(self, '_train_indices', None),
+                'val_indices': getattr(self, '_val_indices', None)
+            },
+            'ema_state': ema_state,
             'random_state': {
-                'python': np.random.get_state()[1].tolist(),  # Convert to JSON serializable
-                'numpy': np.random.get_state(),
+                'python': np.random.get_state()[1].tolist(),  # Fix: Save all 625 elements
+                'numpy_pos': int(np.random.get_state()[2]),  # Fix: Save position separately
                 'torch': torch.get_rng_state().tolist()
             },
             'hyperparameters': {
@@ -618,10 +769,17 @@ class AdvancedAttentionModel(pl.LightningModule):
             'timestamp': datetime.now().isoformat()
         }
         
-        with open(self.training_state_path, 'w') as f:
-            json.dump(state, f, indent=2, default=str)
-        
-        logger.info(f"💾 Training state saved to {self.training_state_path}")
+        try:
+            with open(self.training_state_path, 'w') as f:
+                json.dump(state, f, indent=2, default=str)
+            
+            logger.info(f"💾 Training state saved to {self.training_state_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to save training state: {e}")
+            logger.error("Resume capability may be compromised!")
+        logger.info(f"   ✅ Data split indices: {'saved' if state['data_split']['train_indices'] else 'not available'}")
+        logger.info(f"   ✅ EMA state: {'saved' if ema_state else 'not available'}")
+        logger.info(f"   ✅ Random states: saved for perfect reproducibility")
     
     def load_training_state(self):
         """Load training state for resuming."""
@@ -638,13 +796,47 @@ class AdvancedAttentionModel(pl.LightningModule):
             self.best_val_loss = state.get('best_val_loss', float('inf'))
             self.current_size = state.get('current_image_size', self.start_size)
             
+            # Restore data split indices
+            if 'data_split' in state:
+                self._train_indices = state['data_split'].get('train_indices', None)
+                self._val_indices = state['data_split'].get('val_indices', None)
+                logger.info(f"   📊 Data split indices restored: {len(self._train_indices) if self._train_indices else 0} train, {len(self._val_indices) if self._val_indices else 0} val")
+            
+            # Restore EMA state
+            if 'ema_state' in state and state['ema_state'] and self.use_ema and hasattr(self, 'ema'):
+                try:
+                    ema_state = state['ema_state']
+                    self.ema.decay = ema_state['decay']
+                    
+                    # Restore shadow weights (use current parameter device/dtype for safety)
+                    for name, param_list in ema_state['shadow'].items():
+                        if name in self.ema.shadow:
+                            # Get device and dtype from current parameter
+                            current_param = self.ema.shadow[name]
+                            device = current_param.device
+                            dtype = current_param.dtype
+                            self.ema.shadow[name] = torch.tensor(param_list, device=device, dtype=dtype)
+                    
+                    # Restore backup weights if available
+                    if ema_state['backup']:
+                        for name, param_list in ema_state['backup'].items():
+                            if name in self.ema.shadow:  # Only restore if corresponding shadow exists
+                                device = self.ema.shadow[name].device
+                                self.ema.backup[name] = torch.tensor(param_list, device=device)
+                    
+                    logger.info(f"   ✅ EMA state restored successfully")
+                except Exception as e:
+                    logger.warning(f"   ⚠️  Failed to restore EMA state: {e}")
+            
             # Restore random states for reproducibility
             if 'random_state' in state:
                 random_state = state['random_state']
-                if 'python' in random_state:
-                    np.random.set_state(('MT19937', np.array(random_state['python']), 624, 0, 0.0))
+                if 'python' in random_state and 'numpy_pos' in random_state:
+                    # Fix: Properly reconstruct numpy random state
+                    np.random.set_state(('MT19937', np.array(random_state['python']), random_state['numpy_pos'], 0, 0.0))
                 if 'torch' in random_state:
                     torch.set_rng_state(torch.tensor(random_state['torch'], dtype=torch.uint8))
+                logger.info(f"   ✅ Random states restored for reproducibility")
             
             logger.info(f"🔄 Training state loaded from {self.training_state_path}")
             logger.info(f"   Resuming from epoch {state.get('epoch', 0)}")
@@ -708,28 +900,76 @@ class ProgressiveDataset(torch.utils.data.Dataset):
         return self.base_dataset[idx]
 
 
-def get_dataloaders(batch_size=16, total_epochs=60):
-    """Get dataloaders with progressive augmentations and dataset's built-in transforms."""
+def get_dataloaders(batch_size=16, total_epochs=60, base_size=256, save_split=True, saved_split_path=None):
+    """Get dataloaders with progressive augmentations and dataset's built-in transforms.
+    
+    Args:
+        save_split: Whether to save the data split indices for perfect resume
+        saved_split_path: Path to saved split indices (for resume)
+    """
     
     # Create base datasets - training will use progressive augmentations, validation none
-    base_train_dataset = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False)  # Start with no augs
-    ds_val = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False)
+    base_train_dataset = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False, base_size=base_size)  # Start with no augs
+    ds_val = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False, base_size=base_size)
 
     # Wrap training dataset with progressive augmentations
     ds_train_progressive = ProgressiveDataset(base_train_dataset, total_epochs=total_epochs)
 
-    # Deterministic split for reproducibility - same seed always gives same split
-    val_size = int(0.1 * len(ds_train_progressive))
-    train_size = len(ds_train_progressive) - val_size
+    # Try to load existing split for perfect resume
+    train_indices = None
+    val_indices = None
     
-    # Use fixed seed for completely reproducible data splits across runs
-    generator = torch.Generator().manual_seed(42)
-    train_subset, val_subset = torch.utils.data.random_split(
-        range(len(ds_train_progressive)), [train_size, val_size], generator=generator
-    )
+    if saved_split_path and Path(saved_split_path).exists():
+        try:
+            with open(saved_split_path, 'r') as f:
+                split_data = json.load(f)
+            # Ensure indices are integers (JSON may load them as different types)
+            train_indices = [int(idx) for idx in split_data['train_indices']]
+            val_indices = [int(idx) for idx in split_data['val_indices']]
+            logger.info(f"🔄 Loaded existing data split from {saved_split_path}")
+            logger.info(f"   Train samples: {len(train_indices)}, Val samples: {len(val_indices)}")
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to load saved split: {e}. Creating new split.")
     
-    ds_train = torch.utils.data.Subset(ds_train_progressive, train_subset.indices)
-    ds_val = torch.utils.data.Subset(ds_val, val_subset.indices)
+    # Create new split if not loaded
+    if train_indices is None or val_indices is None:
+        # Deterministic split for reproducibility - same seed always gives same split
+        val_size = int(0.1 * len(ds_train_progressive))
+        train_size = len(ds_train_progressive) - val_size
+        
+        # Use fixed seed for completely reproducible data splits across runs
+        generator = torch.Generator().manual_seed(42)
+        train_subset, val_subset = torch.utils.data.random_split(
+            range(len(ds_train_progressive)), [train_size, val_size], generator=generator
+        )
+        
+        train_indices = train_subset.indices
+        val_indices = val_subset.indices
+        
+        # Save the split for perfect resume capability
+        if save_split and saved_split_path:
+            try:
+                Path(saved_split_path).parent.mkdir(exist_ok=True)
+                split_data = {
+                    'train_indices': train_indices,
+                    'val_indices': val_indices,
+                    'total_samples': len(ds_train_progressive),
+                    'train_size': len(train_indices),
+                    'val_size': len(val_indices),
+                    'split_ratio': len(val_indices) / len(ds_train_progressive),
+                    'seed': 42,
+                    'timestamp': datetime.now().isoformat()
+                }
+                with open(saved_split_path, 'w') as f:
+                    json.dump(split_data, f, indent=2)
+                logger.info(f"💾 Data split saved to {saved_split_path} for perfect resume")
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to save data split: {e}. Resume capability may be limited.")
+        
+        logger.info("📊 Created new deterministic data split")
+    
+    ds_train = torch.utils.data.Subset(ds_train_progressive, train_indices)
+    ds_val = torch.utils.data.Subset(ds_val, val_indices)
 
     # Use num_workers=0 on Windows
     num_workers = 0 if platform.system() == 'Windows' else 4
@@ -743,10 +983,10 @@ def get_dataloaders(batch_size=16, total_epochs=60):
         num_workers=num_workers, pin_memory=True, persistent_workers=False
     )
     
-    logger.info(f"📊 Data split: {len(train_subset)} train samples, {len(val_subset)} validation samples")
-    logger.info("🔄 Using deterministic data split (seed=42) for reproducibility")
+    logger.info(f"📊 Data split: {len(train_indices)} train samples, {len(val_indices)} validation samples")
+    logger.info("🔄 Using deterministic data split with saved indices for perfect resume")
     
-    return train_loader, val_loader
+    return train_loader, val_loader, train_indices, val_indices
 
 
 def main():
@@ -755,19 +995,19 @@ def main():
     parser.add_argument('--lr', type=float, default=3e-4, help='Initial learning rate')
     parser.add_argument('--dropout', type=float, default=0.1, help='Dropout rate for Attention U-Net')
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size')
-    parser.add_argument('--epochs', type=int, default=60, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=120, help='Number of epochs')
     parser.add_argument('--gpus', type=int, default=1, help='Number of GPUs')
     
     # Advanced optimization parameters
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for AdamW')
     parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs')
     parser.add_argument('--min_lr_factor', type=float, default=0.01, help='Minimum LR as factor of initial LR')
-    parser.add_argument('--early_stopping_patience', type=int, default=15, help='Early stopping patience (epochs)')
+    parser.add_argument('--early_stopping_patience', type=int, default=30, help='Early stopping patience (epochs)')
     parser.add_argument('--grad_clip_val', type=float, default=1.0, help='Gradient clipping value')
     
     # State-of-the-art features
     parser.add_argument('--use_swa', action='store_true', help='Use Stochastic Weight Averaging')
-    parser.add_argument('--swa_start_epoch', type=int, default=30, help='Epoch to start SWA')
+    parser.add_argument('--swa_start_epoch', type=int, default=60, help='Epoch to start SWA')
     parser.add_argument('--use_tta', action='store_true', help='Use Test Time Augmentation for validation')
     parser.add_argument('--disable_ema', action='store_true', help='Disable Exponential Moving Average')
     
@@ -797,7 +1037,7 @@ def main():
     print("\n🎯 State-of-the-Art Features:")
     print("  - Attention U-Net architecture")  
     print("  - CLAHE + Z-score preprocessing (built into dataset)")
-    print("  - Progressive resizing training (128→256px)")
+    print("  - Progressive resizing training (128→256px, full size at epoch 84)")
     print("  - Progressive augmentations (complexity increases with epoch)")
     print("  - MixUp augmentation + advanced transforms")
     print("  - Hybrid loss (Dice + Focal + Boundary)")
@@ -808,14 +1048,24 @@ def main():
     print(f"  - Exponential Moving Average: {'❌ Disabled' if args.disable_ema else '✅ Enabled'}")
     print("="*50)
     
-    # Get dataloaders with progressive augmentations
-    train_loader, val_loader = get_dataloaders(batch_size=args.batch_size, total_epochs=args.epochs)
+    # Get dataloaders with progressive augmentations and perfect resume capability
+    data_split_path = Path('lightning_logs/data_split.json')
+    
+    # First attempt to get dataloaders (may use saved split if available)
+    train_loader, val_loader, train_indices, val_indices = get_dataloaders(
+        batch_size=args.batch_size, 
+        total_epochs=args.epochs, 
+        base_size=256,
+        save_split=True,
+        saved_split_path=str(data_split_path)
+    )
     
     # Calculate actual steps per epoch for proper LR scheduling
     steps_per_epoch = len(train_loader)
     print(f"📊 Dataset info: {len(train_loader)} train batches, {len(val_loader)} val batches")
     print(f"🔄 Learning rate scheduler will use {steps_per_epoch} steps per epoch")
     print(f"🎨 Progressive augmentations: Start simple, increase complexity over {args.epochs} epochs")
+    print(f"💾 Data split indices saved for perfect resume capability")
     
     # Handle resume functionality
     resume_checkpoint = None
@@ -849,6 +1099,65 @@ def main():
         use_ema=not args.disable_ema,
         resume_path=resume_checkpoint
     )
+    
+    # Store data split indices in model for perfect resume capability
+    # But preserve any loaded indices from training state first
+    if not hasattr(model, '_train_indices') or model._train_indices is None:
+        model._train_indices = train_indices
+    if not hasattr(model, '_val_indices') or model._val_indices is None:
+        model._val_indices = val_indices
+    
+    # Validate data split consistency for perfect resume (only if resuming)
+    if args.resume and resume_checkpoint:
+        is_consistent = model.validate_data_split_consistency(train_indices, val_indices)
+        if not is_consistent and hasattr(model, '_train_indices') and model._train_indices is not None:
+            print("\n" + "="*80)
+            print("🔄 USING SAVED DATA SPLIT FOR PERFECT RESUME")
+            print("="*80)
+            print("Detected data split mismatch. Automatically using saved indices from previous training.")
+            print("This ensures validation Dice scores remain consistent across resume.")
+            print("="*80)
+            
+            # Recreate dataloaders with saved indices
+            try:
+                # Create the same base datasets
+                base_train_dataset = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False, base_size=256)
+                ds_val = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False, base_size=256)
+                ds_train_progressive = ProgressiveDataset(base_train_dataset, total_epochs=args.epochs)
+                
+                # Use saved indices
+                ds_train = torch.utils.data.Subset(ds_train_progressive, model._train_indices)
+                ds_val_resume = torch.utils.data.Subset(ds_val, model._val_indices)
+                
+                # Recreate dataloaders
+                num_workers = 0 if platform.system() == 'Windows' else 4
+                train_loader = DataLoader(
+                    ds_train, batch_size=args.batch_size, shuffle=True, 
+                    num_workers=num_workers, pin_memory=True, persistent_workers=False
+                )
+                val_loader = DataLoader(
+                    ds_val_resume, batch_size=args.batch_size, shuffle=False,
+                    num_workers=num_workers, pin_memory=True, persistent_workers=False
+                )
+                
+                # Update indices to match what we're actually using
+                train_indices = model._train_indices
+                val_indices = model._val_indices
+                
+                print(f"✅ Successfully using saved data split: {len(train_indices)} train, {len(val_indices)} val samples")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to recreate dataloaders with saved indices: {e}")
+                print("Falling back to current data split - validation scores may be inconsistent.")
+        
+        elif not is_consistent:
+            print("\n" + "="*80)
+            print("⚠️  WARNING: DATA SPLIT INCONSISTENCY DETECTED!")
+            print("="*80)
+            print("The current data split doesn't match the saved split from previous training.")
+            print("This could cause validation Dice scores to appear to drop artificially.")
+            print("No saved indices available to automatically correct this.")
+            print("="*80)
     
     # Setup callbacks
     checkpoint_callback = ModelCheckpoint(

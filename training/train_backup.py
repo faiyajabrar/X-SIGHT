@@ -76,7 +76,7 @@ def _frequency_weighted_dice_score(preds: torch.Tensor, targets: torch.Tensor, n
     eps = 1e-6
     
     # Frequency weights (square root of inverse frequency - less extreme)
-    pixel_freq = torch.tensor([0.812568, 0.106870, 0.017744, 0.037365, 0.000691, 0.024763], device=preds.device)
+    pixel_freq = torch.tensor([0.832818975, 0.0866185198, 0.0177438743, 0.0373645720, 0.000691303678, 0.0247627551], device=preds.device)
     class_weights = torch.sqrt(1.0 / (pixel_freq + eps))
     # Cap maximum weight to prevent extreme values
     class_weights = torch.clamp(class_weights, max=10.0)
@@ -110,7 +110,7 @@ class ProvenDiceLoss(nn.Module):
         self.epsilon = epsilon
         
         # Frequency weights (square root of inverse frequency - proven effective)
-        pixel_freq = torch.tensor([0.812568, 0.106870, 0.017744, 0.037365, 0.000691, 0.024763])
+        pixel_freq = torch.tensor([0.832818975, 0.0866185198, 0.0177438743, 0.0373645720, 0.000691303678, 0.0247627551])
         self.class_weights = torch.sqrt(1.0 / (pixel_freq + self.epsilon))
         # Cap maximum weight to prevent extreme values
         self.class_weights = torch.clamp(self.class_weights, max=10.0)

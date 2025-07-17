@@ -157,6 +157,9 @@ class AttentionUNet(nn.Module):
     
     def _forward_normal(self, x):
         """Standard forward pass."""
+        # Store original size for progressive resizing compatibility
+        original_size = x.shape[-2:]
+        
         # Encoder
         e0 = self.enc0(x)        # (B,64,H/2,W/2)
         e0p = self.pool0(e0)     # (B,64,H/4,W/4)
@@ -171,12 +174,16 @@ class AttentionUNet(nn.Module):
         d2 = self.up2(d3, e1)    # (B,64,H/4,W/4)
         d1 = self.up1(d2, e0)    # (B,64,H/2,W/2)
 
-        out = F.interpolate(d1, scale_factor=2, mode='bilinear', align_corners=False)  # (B,64,H,W)
+        # Use original input size instead of hardcoded scale_factor for progressive resizing compatibility
+        out = F.interpolate(d1, size=original_size, mode='bilinear', align_corners=False)  # (B,64,H,W)
         out = self.final_conv(out)  # (B,n_classes,H,W)
         return out
     
     def _forward_with_checkpointing(self, x):
         """Forward pass with gradient checkpointing for memory efficiency."""
+        # Store original size for progressive resizing compatibility
+        original_size = x.shape[-2:]
+        
         # Encoder with checkpointing
         e0 = self._checkpoint(self.enc0, x, use_reentrant=False)
         e0p = self.pool0(e0)
@@ -191,7 +198,8 @@ class AttentionUNet(nn.Module):
         d2 = self._checkpoint(self.up2, d3, e1, use_reentrant=False)
         d1 = self._checkpoint(self.up1, d2, e0, use_reentrant=False)
 
-        out = F.interpolate(d1, scale_factor=2, mode='bilinear', align_corners=False)
+        # Use original input size instead of hardcoded scale_factor for progressive resizing compatibility
+        out = F.interpolate(d1, size=original_size, mode='bilinear', align_corners=False)
         out = self.final_conv(out)
         return out
 

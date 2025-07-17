@@ -46,7 +46,6 @@ from training.train import (
     EMAWrapper, 
     mixup_data, 
     mixup_criterion,
-    HybridLoss,
     ProgressiveDataset
 )
 
@@ -59,88 +58,241 @@ if platform.system() == 'Windows':
     torch.multiprocessing.set_start_method('spawn', force=True)
 
 
+class HybridLoss(nn.Module):
+    """Advanced hybrid loss combining Dice, Focal, and Boundary losses - Fixed for progressive resizing."""
+    
+    def __init__(self, num_classes=6, epsilon=1e-6, focal_alpha=0.25, focal_gamma=2.0, 
+                 boundary_weight=0.1, dice_weight=0.7, focal_weight=0.2):
+        super().__init__()
+        self.num_classes = num_classes
+        self.epsilon = epsilon
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
+        
+        # Normalize loss weights to sum to 1.0 for stable training
+        total_weight = dice_weight + focal_weight + boundary_weight
+        self.dice_weight = dice_weight / total_weight
+        self.focal_weight = focal_weight / total_weight
+        self.boundary_weight = boundary_weight / total_weight
+        
+        # Frequency weights for Dice component
+        pixel_freq = torch.tensor([0.832818975, 0.0866185198, 0.0177438743, 0.0373645720, 0.000691303678, 0.0247627551])
+        self.class_weights = torch.sqrt(1.0 / (pixel_freq + self.epsilon))
+        self.class_weights = torch.clamp(self.class_weights, max=10.0)
+        # Fixed normalization: maintain relative weights but normalize to mean=1.0
+        self.class_weights = self.class_weights / self.class_weights.mean()
+    
+    def dice_loss(self, y_pred, y_true):
+        """Frequency-weighted Dice loss component."""
+        y_pred_soft = F.softmax(y_pred, dim=1)
+        y_true_onehot = F.one_hot(y_true, num_classes=self.num_classes).permute(0, 3, 1, 2).float()
+        
+        class_weights = self.class_weights.to(y_pred_soft.device)
+        
+        dice_coeffs = []
+        for i in range(self.num_classes):
+            intersection = torch.sum(y_true_onehot[:, i] * y_pred_soft[:, i])
+            union = torch.sum(y_true_onehot[:, i]) + torch.sum(y_pred_soft[:, i])
+            dice_coeff = (2.0 * intersection + self.epsilon) / (union + self.epsilon)
+            dice_coeffs.append(dice_coeff)
+        
+        dice_tensor = torch.stack(dice_coeffs)
+        weighted_dice = (dice_tensor * class_weights).sum() / class_weights.sum()
+        return 1.0 - weighted_dice
+    
+    def focal_loss(self, y_pred, y_true):
+        """Focal loss for hard example mining."""
+        y_pred_soft = F.softmax(y_pred, dim=1)
+        y_true_onehot = F.one_hot(y_true, num_classes=self.num_classes).permute(0, 3, 1, 2).float()
+        
+        # Compute focal weights
+        pt = torch.sum(y_pred_soft * y_true_onehot, dim=1)  # Shape: [B, H, W]
+        alpha_t = self.focal_alpha
+        focal_weight = alpha_t * (1 - pt) ** self.focal_gamma
+        
+        # Cross entropy
+        ce_loss = F.cross_entropy(y_pred, y_true, reduction='none')
+        focal_loss = focal_weight * ce_loss
+        
+        return focal_loss.mean()
+    
+    def boundary_loss(self, y_pred, y_true):
+        """Boundary loss for better edge detection - Fixed for progressive resizing."""
+        y_pred_soft = F.softmax(y_pred, dim=1)
+        
+        # Get spatial dimensions
+        B, C, H, W = y_pred_soft.shape
+        
+        # Compute prediction gradients (edge detection) - handle edge cases
+        if W > 1:
+            pred_dx = torch.abs(y_pred_soft[:, :, :, 1:] - y_pred_soft[:, :, :, :-1])  # [B, C, H, W-1]
+        else:
+            pred_dx = torch.zeros(B, C, H, 1, device=y_pred_soft.device)
+            
+        if H > 1:
+            pred_dy = torch.abs(y_pred_soft[:, :, 1:, :] - y_pred_soft[:, :, :-1, :])  # [B, C, H-1, W]
+        else:
+            pred_dy = torch.zeros(B, C, 1, W, device=y_pred_soft.device)
+        
+        # Target boundaries using simple gradient - handle edge cases
+        y_true_float = y_true.float()
+        if W > 1:
+            true_dx = torch.abs(y_true_float[:, :, 1:] - y_true_float[:, :, :-1])  # [B, H, W-1]
+        else:
+            true_dx = torch.zeros(B, H, 1, device=y_true.device)
+            
+        if H > 1:
+            true_dy = torch.abs(y_true_float[:, 1:, :] - y_true_float[:, :-1, :])  # [B, H-1, W]
+        else:
+            true_dy = torch.zeros(B, 1, W, device=y_true.device)
+        
+        # Simplified boundary loss - just use MSE on summed gradients
+        # Sum across classes for prediction gradients
+        pred_dx_sum = pred_dx.sum(dim=1)  # [B, H, W-1]
+        pred_dy_sum = pred_dy.sum(dim=1)  # [B, H-1, W]
+        
+        # Normalize gradients to [0, 1] range
+        pred_dx_norm = torch.clamp(pred_dx_sum / (pred_dx_sum.max() + self.epsilon), 0, 1)
+        pred_dy_norm = torch.clamp(pred_dy_sum / (pred_dy_sum.max() + self.epsilon), 0, 1)
+        
+        # Normalize true gradients to [0, 1] range
+        true_dx_norm = torch.clamp(true_dx / (true_dx.max() + self.epsilon), 0, 1)
+        true_dy_norm = torch.clamp(true_dy / (true_dy.max() + self.epsilon), 0, 1)
+        
+        # Ensure spatial dimensions match for MSE computation
+        min_h_dx = min(pred_dx_norm.shape[1], true_dx_norm.shape[1])
+        min_w_dx = min(pred_dx_norm.shape[2], true_dx_norm.shape[2])
+        
+        min_h_dy = min(pred_dy_norm.shape[1], true_dy_norm.shape[1])
+        min_w_dy = min(pred_dy_norm.shape[2], true_dy_norm.shape[2])
+        
+        # Compute MSE losses with matching dimensions
+        if min_h_dx > 0 and min_w_dx > 0:
+            boundary_loss_x = F.mse_loss(
+                pred_dx_norm[:, :min_h_dx, :min_w_dx], 
+                true_dx_norm[:, :min_h_dx, :min_w_dx]
+            )
+        else:
+            boundary_loss_x = torch.tensor(0.0, device=y_pred.device)
+        
+        if min_h_dy > 0 and min_w_dy > 0:
+            boundary_loss_y = F.mse_loss(
+                pred_dy_norm[:, :min_h_dy, :min_w_dy], 
+                true_dy_norm[:, :min_h_dy, :min_w_dy]
+            )
+        else:
+            boundary_loss_y = torch.tensor(0.0, device=y_pred.device)
+        
+        return (boundary_loss_x + boundary_loss_y) / 2
+    
+    def forward(self, y_pred, y_true):
+        dice_loss = self.dice_loss(y_pred, y_true)
+        focal_loss = self.focal_loss(y_pred, y_true)
+        boundary_loss = self.boundary_loss(y_pred, y_true)
+        
+        total_loss = (self.dice_weight * dice_loss + 
+                     self.focal_weight * focal_loss + 
+                     self.boundary_weight * boundary_loss)
+        
+        return total_loss
+
 
 class TuningAttentionModel(pl.LightningModule):
     """Lightning module for hyperparameter tuning with Optuna integration."""
 
-    def __init__(self, trial, total_epochs=10, steps_per_epoch=445):
+    def __init__(self, trial, total_epochs=24, steps_per_epoch=445):
         super().__init__()
         self.trial = trial
         self.total_epochs = total_epochs
         self.steps_per_epoch = steps_per_epoch
+        self.best_val_dice = 0.0
+        self.reported_epochs = set()
         
-        # Suggest hyperparameters
+        # Hyperparameters from trial
         self.lr = trial.suggest_float('lr', 1e-5, 1e-2, log=True)
         self.dropout = trial.suggest_float('dropout', 0.05, 0.3)
         self.weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
-        
-        # Advanced optimization parameters
         self.grad_clip_val = trial.suggest_float('grad_clip_val', 0.1, 2.0)
         self.mixup_alpha = trial.suggest_float('mixup_alpha', 0.1, 0.8)
-        self.ema_decay = trial.suggest_float('ema_decay', 0.995, 0.9999)
+        self.ema_decay = trial.suggest_float('ema_decay', 0.995, 0.998)  # Lower decay for shorter training
         
-        # Progressive training parameters (multiples of 32 for ResNet compatibility)
-        self.start_size = trial.suggest_categorical('start_size', [128, 160, 192])
-        self.end_size = trial.suggest_categorical('end_size', [224, 256, 288])
+        # Progressive resizing parameters
+        self.start_size = trial.suggest_int('start_size', 96, 160, step=32)
+        self.end_size = trial.suggest_int('end_size', 224, 288, step=32)
         
         # Ensure start_size < end_size for valid progressive training
         if self.start_size >= self.end_size:
-            self.start_size = 128  # Reset to smallest valid size
+            logger.warning(f"Trial {trial.number}: Invalid progressive resize: start_size ({self.start_size}) >= end_size ({self.end_size})")
+            # Swap them if they're backwards, or set reasonable defaults
+            if self.start_size > self.end_size:
+                self.start_size, self.end_size = self.end_size, self.start_size
+                logger.warning(f"Trial {trial.number}: Swapped sizes - start_size={self.start_size}, end_size={self.end_size}")
+            else:  # They're equal
+                self.start_size = max(96, self.start_size - 32)  # Ensure some progression
+                logger.warning(f"Trial {trial.number}: Adjusted start_size to {self.start_size}")
         
         # Loss function parameters
-        self.focal_alpha = trial.suggest_float('focal_alpha', 0.1, 0.5)
+        self.focal_alpha = trial.suggest_float('focal_alpha', 0.1, 1.0)
         self.focal_gamma = trial.suggest_float('focal_gamma', 1.0, 3.0)
-        self.dice_weight = trial.suggest_float('dice_weight', 0.5, 0.8)
-        self.focal_weight = trial.suggest_float('focal_weight', 0.1, 0.3)
+        self.dice_weight = trial.suggest_float('dice_weight', 0.3, 0.8)
+        self.focal_weight = trial.suggest_float('focal_weight', 0.1, 0.4)
         self.boundary_weight = trial.suggest_float('boundary_weight', 0.05, 0.2)
         
-        # OneCycleLR parameters
-        self.pct_start = trial.suggest_float('pct_start', 0.2, 0.4)
-        self.div_factor = trial.suggest_int('div_factor', 10, 50)
-        self.final_div_factor = trial.suggest_int('final_div_factor', 100, 10000, log=True)
+        # OneCycleLR parameters (optimized for 24-epoch training)
+        self.pct_start = trial.suggest_float('pct_start', 0.25, 0.4)  # 25-40% warmup for shorter training
+        self.div_factor = trial.suggest_int('div_factor', 10, 25)     # Less aggressive for short training
+        self.final_div_factor = trial.suggest_int('final_div_factor', 100, 1000)
         
-        # Advanced features toggles
+        # Feature toggles
         self.use_mixup = trial.suggest_categorical('use_mixup', [True, False])
         self.use_ema = trial.suggest_categorical('use_ema', [True, False])
         self.progressive_resize = trial.suggest_categorical('progressive_resize', [True, False])
         
-        # Model architecture
+        # Model components
         self.model = AttentionUNet(n_classes=6, dropout=self.dropout, pretrained=True)
         
-        # Advanced hybrid loss with tuned parameters
+        # Normalize loss weights to sum to 1.0 for stable training
+        total_weight = self.dice_weight + self.focal_weight + self.boundary_weight
+        normalized_dice_weight = self.dice_weight / total_weight
+        normalized_focal_weight = self.focal_weight / total_weight
+        normalized_boundary_weight = self.boundary_weight / total_weight
+        
         self.criterion = HybridLoss(
-            num_classes=6, 
+            num_classes=6,
             epsilon=1e-6,
             focal_alpha=self.focal_alpha,
             focal_gamma=self.focal_gamma,
-            boundary_weight=self.boundary_weight,
-            dice_weight=self.dice_weight,
-            focal_weight=self.focal_weight
+            boundary_weight=normalized_boundary_weight,
+            dice_weight=normalized_dice_weight,
+            focal_weight=normalized_focal_weight
         )
         
         # Initialize EMA if enabled
         if self.use_ema:
             self.ema = EMAWrapper(self.model, decay=self.ema_decay)
         
-        # Progressive resize tracking
-        self.current_size = self.start_size if self.progressive_resize else self.end_size
+        # Trial checkpoint path
+        self.trial_checkpoint_path = Path(f'tune_runs/trial_checkpoints/trial_{trial.number}.json')
+        self.trial_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Track best validation score for pruning
-        self.best_val_dice = 0.0
+        # Progressive resizing cache - FIX: Cache current image size per epoch
+        self._cached_image_size = None
+        self._cached_epoch = -1
         
-        # Track reported epochs to avoid duplicate reporting to Optuna
-        self.reported_epochs = set()
-        
-        # Trial state for mid-trial resume
-        self.trial_checkpoint_dir = Path('tune_runs') / 'trial_checkpoints'
-        self.trial_checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.trial_checkpoint_path = self.trial_checkpoint_dir / f'trial_{trial.number}_checkpoint.json'
+        # Log trial parameters
+        logger.info(f"🚀 Starting trial {trial.number} with parameters: {trial.params}")
 
     def forward(self, x):
         return self.model(x)
-    
+
     def on_train_epoch_start(self):
         """Update progressive augmentations at the start of each epoch."""
+        # Cache the current image size for this epoch to ensure consistency
+        if self.progressive_resize:
+            self._cached_image_size = self._calculate_current_image_size()
+            self._cached_epoch = self.current_epoch
+            logger.info(f"Progressive augmentations updated for epoch {self.current_epoch}: image size {self._cached_image_size}x{self._cached_image_size}")
+        
         train_dataloader = self.trainer.train_dataloader
         if hasattr(train_dataloader, 'dataset'):
             dataset = train_dataloader.dataset
@@ -149,14 +301,31 @@ class TuningAttentionModel(pl.LightningModule):
             elif hasattr(dataset, 'update_epoch'):
                 dataset.update_epoch(self.current_epoch)
     
-    def get_current_image_size(self):
-        """Progressive resizing: start small, gradually increase to full size."""
+    def _calculate_current_image_size(self):
+        """Calculate the current image size based on progressive resizing."""
         if not self.progressive_resize:
             return self.end_size
             
-        progress = min(1.0, self.current_epoch / (self.total_epochs * 0.5))  # Faster progression for short training
+        # Use mock current_epoch for testing if available, otherwise use actual current_epoch
+        current_epoch = getattr(self, '_current_epoch', self.current_epoch)
+        
+        # Reach full size at 80% of training for tuning (allows meaningful progression in 24 epochs)
+        progress = min(1.0, current_epoch / (self.total_epochs * 0.8))
         current_size = int(self.start_size + (self.end_size - self.start_size) * progress)
         return max(self.start_size, min(self.end_size, current_size))
+    
+    def get_current_image_size(self):
+        """Get the current image size, using cached value for consistency within epoch."""
+        if self.progressive_resize:
+            # Use cached size if available for current epoch
+            if self._cached_epoch == self.current_epoch and self._cached_image_size is not None:
+                return self._cached_image_size
+            else:
+                # Calculate and cache for new epoch
+                self._cached_image_size = self._calculate_current_image_size()
+                self._cached_epoch = self.current_epoch
+                return self._cached_image_size
+        return self.end_size
 
     def training_step(self, batch, batch_idx):
         imgs, masks = batch['image'], batch['mask']
@@ -450,12 +619,44 @@ def cleanup_completed_trial_checkpoints(study):
         except (ValueError, IndexError):
             continue
 
-def get_tuning_dataloaders(batch_size=16, total_epochs=10, train_indices=None, val_indices=None):
-    """Get dataloaders for hyperparameter tuning (smaller dataset for speed)."""
+def cleanup_failed_trial_checkpoints(study):
+    """Remove checkpoints for failed/pruned trials so they can be rerun."""
+    checkpoint_dir = Path('tune_runs') / 'trial_checkpoints'
+    if not checkpoint_dir.exists():
+        return
     
-    # Create base datasets
-    base_train_dataset = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False)
-    ds_val = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False)
+    # Get all failed/pruned trial numbers
+    failed_trial_numbers = {trial.number for trial in study.trials 
+                           if trial.state in [optuna.trial.TrialState.FAIL, optuna.trial.TrialState.PRUNED]}
+    
+    cleaned_count = 0
+    for checkpoint_file in checkpoint_dir.glob('trial_*_checkpoint.json'):
+        try:
+            trial_number = int(checkpoint_file.stem.split('_')[1])
+            if trial_number in failed_trial_numbers:
+                checkpoint_file.unlink()
+                cleaned_count += 1
+                logger.info(f"🧹 Cleaned checkpoint for failed trial {trial_number}")
+        except (ValueError, IndexError):
+            continue
+    
+    if cleaned_count > 0:
+        print(f"🧹 Cleaned {cleaned_count} failed trial checkpoints for rerun")
+    
+    return cleaned_count
+
+def get_tuning_dataloaders(batch_size=16, total_epochs=24, train_indices=None, val_indices=None, base_size=None):
+    """Get dataloaders for hyperparameter tuning (smaller dataset for speed).
+    
+    Args:
+        base_size: Base size for dataset images. Should match the start_size of progressive resizing
+                  to ensure proper tensor size consistency during progressive training.
+    """
+    
+    # Create base datasets with configurable base_size for progressive resizing
+    # Note: base_size should match the progressive resizing start_size to avoid tensor size mismatches
+    base_train_dataset = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False, base_size=base_size)
+    ds_val = PanNukeDataset(root='Dataset', augmentations=None, validate_dataset=False, base_size=base_size)
 
     # Wrap training dataset with progressive augmentations
     ds_train_progressive = ProgressiveDataset(base_train_dataset, total_epochs=total_epochs)
@@ -507,7 +708,7 @@ def objective(trial):
         logger.info(f"🚀 Starting trial {trial.number} with parameters: {trial.params}")
         
         # Create model with suggested hyperparameters first to access checkpoint loading
-        model = TuningAttentionModel(trial, total_epochs=10, steps_per_epoch=445)  # Use approximate steps first
+        model = TuningAttentionModel(trial, total_epochs=24, steps_per_epoch=445)  # Use approximate steps first
         
         # Check if we can resume this trial from a checkpoint
         resume_epoch = model.load_trial_checkpoint()
@@ -517,10 +718,12 @@ def objective(trial):
         saved_train_indices = getattr(model, '_train_indices', None)
         saved_val_indices = getattr(model, '_val_indices', None)
         
-        # Get dataloaders with consistent data split
+        # Get dataloaders with consistent data split and correct base_size
+        # Use start_size for base_size to ensure progressive resizing works properly
         train_loader, val_loader, train_indices, val_indices = get_tuning_dataloaders(
-            batch_size=16, total_epochs=10, 
-            train_indices=saved_train_indices, val_indices=saved_val_indices
+            batch_size=16, total_epochs=24, 
+            train_indices=saved_train_indices, val_indices=saved_val_indices,
+            base_size=model.start_size  # Use trial's start_size as dataset base_size for progressive resizing
         )
         
         # Save data split indices in model for future checkpoints
@@ -538,14 +741,14 @@ def objective(trial):
         early_stopping = EarlyStopping(
             monitor='val_dice',
             mode='max',
-            patience=4,  # Shorter patience for faster tuning (10 epochs total)
+            patience=8,  # 33% patience for 24 epochs (optimal for convergence detection)
             verbose=False,
             min_delta=0.001
         )
         
-        # Create trainer for tuning (shorter epochs, less logging)
+        # Create trainer for tuning (optimized for 24-epoch training)
         trainer = pl.Trainer(
-            max_epochs=10,  # Shorter training for faster tuning
+            max_epochs=24,  # Optimal for meaningful hyperparameter comparison
             devices=1,
             accelerator='gpu' if torch.cuda.is_available() else 'cpu',
             callbacks=[early_stopping],  # Only early stopping, no checkpointing
@@ -559,13 +762,13 @@ def objective(trial):
         )
         
         # Train the model (will skip completed epochs if resuming)
-        if start_epoch < 10:  # Only train if there are epochs left
+        if start_epoch < 24:  # Only train if there are epochs left
             # Manually set the current epoch for resume
             trainer.fit_loop.epoch_progress.current.ready = start_epoch
             trainer.fit_loop.epoch_progress.current.started = start_epoch
             trainer.fit_loop.epoch_progress.current.processed = start_epoch
             
-            logger.info(f"🏋️ Training trial {trial.number} from epoch {start_epoch} to 10")
+            logger.info(f"🏋️ Training trial {trial.number} from epoch {start_epoch} to 24")
             trainer.fit(model, train_loader, val_loader)
         else:
             logger.info(f"Trial {trial.number} already completed all epochs")
@@ -708,6 +911,7 @@ def main():
     print("  - MixUp alpha (0.1 to 0.8)")
     print("  - EMA decay (0.995 to 0.9999)")
     print("  - Progressive sizing (96-160 to 224-288)")
+    print("  - Optimized training duration (24 epochs per trial)")
     print("  - Loss weights (Dice, Focal, Boundary)")
     print("  - OneCycleLR parameters")
     print("  - Feature toggles (MixUp, EMA, Progressive)")
@@ -730,7 +934,7 @@ def main():
                 study_name=args.study_name,
                 storage=storage,
                 sampler=TPESampler(seed=42),
-                pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=1)
+                pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=18, interval_steps=2)
             )
             print(f"📂 Resumed study with {len(study.trials)} existing trials")
         except:
@@ -740,7 +944,7 @@ def main():
                 study_name=args.study_name,
                 storage=storage,
                 sampler=TPESampler(seed=42),
-                pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=1),
+                pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=18, interval_steps=2),
                 load_if_exists=True
             )
     else:
@@ -749,7 +953,7 @@ def main():
             study_name=args.study_name,
             storage=storage,
             sampler=TPESampler(seed=42),
-            pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=1),
+            pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=18, interval_steps=2),
             load_if_exists=True
         )
     
@@ -758,11 +962,17 @@ def main():
     # Clean up completed trial checkpoints
     cleanup_completed_trial_checkpoints(study)
     
+    # Clean up failed/pruned trial checkpoints for rerun (only when resuming)
+    if args.resume:
+        cleaned_failed_count = cleanup_failed_trial_checkpoints(study)
+        if cleaned_failed_count > 0:
+            print(f"🔄 Will rerun {cleaned_failed_count} previously failed trials")
+    
     # Check for incomplete trials to resume
     incomplete_trial = find_incomplete_trial()
     if incomplete_trial and args.resume:
         print(f"\n🔄 Found incomplete trial {incomplete_trial['trial_number']}")
-        print(f"   Completed {incomplete_trial['completed_epoch'] + 1}/10 epochs")
+        print(f"   Completed {incomplete_trial['completed_epoch'] + 1}/24 epochs")
         print(f"   Best Dice so far: {incomplete_trial['best_val_dice']:.4f}")
         print(f"   Will resume from epoch {incomplete_trial['completed_epoch'] + 2}")
         
@@ -784,20 +994,31 @@ def main():
     total_existing_trials = len(study.trials)
     completed_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
     failed_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL])
+    pruned_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])
     
     print(f"\n📊 Current study status:")
     print(f"   Total trials attempted: {total_existing_trials}")
     print(f"   Successful trials: {completed_trials}")
     print(f"   Failed trials: {failed_trials}")
+    print(f"   Pruned trials: {pruned_trials}")
     print(f"   Target trials: {args.n_trials}")
     
-    # Calculate remaining trials based on total attempts, not just successful ones
-    remaining_trials = max(0, args.n_trials - total_existing_trials)
+    # Calculate remaining trials based on successful trials only
+    # This allows failed/pruned trials to be rerun automatically
+    remaining_trials = max(0, args.n_trials - completed_trials)
+    
+    # Inform user about rerun strategy
+    if args.resume and (failed_trials > 0 or pruned_trials > 0):
+        print(f"🔄 Resume strategy: Only counting {completed_trials} successful trials")
+        print(f"   Failed/pruned trials will be rerun as new trials")
     
     if remaining_trials > 0:
         print(f"\n🎯 Running {remaining_trials} additional trials...")
-        print(f"   Overall progress: {total_existing_trials}/{args.n_trials} trials attempted")
-        print(f"   This session will run: {remaining_trials} new trials")
+        print(f"   Success progress: {completed_trials}/{args.n_trials} successful trials")
+        if args.resume and (failed_trials > 0 or pruned_trials > 0):
+            print(f"   This session will run: {remaining_trials} trials (including reruns of {failed_trials + pruned_trials} failed/pruned)")
+        else:
+            print(f"   This session will run: {remaining_trials} new trials")
         
         # Custom progress tracking callback
         def progress_callback(study, trial):
@@ -827,8 +1048,10 @@ def main():
             callbacks=[progress_callback]
         )
     else:
-        print(f"\n✅ Target of {args.n_trials} trials already reached!")
+        print(f"\n✅ Target of {args.n_trials} successful trials already reached!")
         print(f"   Success rate: {completed_trials}/{total_existing_trials} = {100*completed_trials/total_existing_trials:.1f}%")
+        if failed_trials > 0 or pruned_trials > 0:
+            print(f"   Note: {failed_trials + pruned_trials} failed/pruned trials were excluded from count")
     
     # Print results
     print(f"\n✅ OPTIMIZATION COMPLETE!")
@@ -850,4 +1073,4 @@ if __name__ == '__main__':
     if platform.system() == 'Windows':
         torch.multiprocessing.freeze_support()
     
-    main() 
+    main()
