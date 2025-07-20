@@ -30,14 +30,22 @@ from training.train import AdvancedAttentionModel, _calculate_class_wise_dice, _
 if platform.system() == 'Windows':
     torch.multiprocessing.set_start_method('spawn', force=True)
 
-# Fix for PyTorch 2.6+ weights_only default change
-def safe_torch_load(path, map_location=None):
+# Store original torch.load function before any modifications
+_original_torch_load = torch.load
+
+def safe_torch_load(path, map_location=None, **kwargs):
     """Safely load PyTorch checkpoint with compatibility for different PyTorch versions."""
+    # Always use weights_only=False for PyTorch 2.6+ compatibility
+    kwargs['weights_only'] = False
     try:
-        return torch.load(path, map_location=map_location, weights_only=False)
-    except TypeError:
-        # Fallback for older PyTorch versions that don't have weights_only parameter
-        return torch.load(path, map_location=map_location)
+        return _original_torch_load(path, map_location=map_location, **kwargs)
+    except TypeError as e:
+        if 'weights_only' in str(e):
+            # Remove weights_only for older PyTorch versions
+            kwargs.pop('weights_only', None)
+            return _original_torch_load(path, map_location=map_location, **kwargs)
+        else:
+            raise e
 
 
 class ModelEvaluator:
@@ -71,28 +79,27 @@ class ModelEvaluator:
         """Load the trained model from checkpoint."""
         print(f"📁 Loading checkpoint: {self.checkpoint_path}")
         
-        # Temporarily patch torch.load to use weights_only=False for compatibility
+        # Load checkpoint with compatibility fix
+        checkpoint = safe_torch_load(self.checkpoint_path, map_location=self.device)
+        
+        # Extract hyperparameters from checkpoint
+        if 'hyper_parameters' in checkpoint:
+            hparams = checkpoint['hyper_parameters']
+            print(f"📋 Model hyperparameters: {hparams}")
+        else:
+            print("⚠️  No hyperparameters found in checkpoint")
+        
+        # Create model from checkpoint - we need to temporarily patch torch.load for lightning
         original_torch_load = torch.load
         torch.load = safe_torch_load
         
         try:
-            # Load checkpoint with compatibility fix
-            checkpoint = safe_torch_load(self.checkpoint_path, map_location=self.device)
-            
-            # Extract hyperparameters from checkpoint
-            if 'hyper_parameters' in checkpoint:
-                hparams = checkpoint['hyper_parameters']
-                print(f"📋 Model hyperparameters: {hparams}")
-            else:
-                print("⚠️  No hyperparameters found in checkpoint")
-            
-            # Create model from checkpoint
             self.model = AdvancedAttentionModel.load_from_checkpoint(
                 self.checkpoint_path,
                 map_location=self.device
             )
         finally:
-            # Restore original torch.load
+            # Always restore original torch.load
             torch.load = original_torch_load
         
         # Move to device and set to eval mode
