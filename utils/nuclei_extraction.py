@@ -2,8 +2,8 @@
 Nuclei Instance Extraction for Two-Stage Classification Pipeline
 
 This module provides functions to extract individual nuclei instances from 
-segmentation masks using connected components analysis. Each nucleus is cropped
-with context padding and prepared for fine-grained classification.
+segmentation masks. For ground truth, it works directly with PanNuke's 6-channel
+instance masks. For predictions, it uses simple connected components analysis.
 """
 
 import cv2
@@ -19,59 +19,65 @@ warnings.filterwarnings('ignore')
 
 def extract_nuclei_instances(
     image: np.ndarray,
-    segmentation_mask: np.ndarray,
-    min_area: int = 20,
-    max_area: int = 10000,
+    mask_6channel: np.ndarray,
+    min_area: int = 10,
+    max_area: int = 50000,
     context_padding: int = 32,
     target_size: int = 224
 ) -> List[Dict]:
     """
-    Extract individual nuclei instances from segmentation mask using connected components.
+    Extract nuclei instances directly from PanNuke's 6-channel instance masks.
+    
+    SIMPLE & ACCURATE: Works directly with perfect ground truth - no morphological operations!
     
     Args:
         image: Original RGB image [H, W, 3]
-        segmentation_mask: Segmentation mask with class labels [H, W]
-        min_area: Minimum nucleus area in pixels
-        max_area: Maximum nucleus area in pixels  
+        mask_6channel: PanNuke 6-channel mask [H, W, 6]
+                      Channels 0-4: Instance masks for each nucleus type
+                      Channel 5: Background mask
+        min_area: Minimum nucleus area in pixels (very permissive)
+        max_area: Maximum nucleus area in pixels (very permissive)
         context_padding: Padding around nucleus for context
-        target_size: Target size for resized patches (224x224 for ResNet50)
+        target_size: Target size for resized patches
         
     Returns:
-        List of dictionaries containing:
-        - 'patch': Cropped and resized nucleus patch [target_size, target_size, 3]
-        - 'mask_patch': Corresponding mask patch [target_size, target_size]
-        - 'class_id': Nucleus class (1-5, excluding background=0)
-        - 'bbox': Bounding box (y1, x1, y2, x2)
-        - 'area': Nucleus area in pixels
-        - 'centroid': Nucleus centroid (y, x)
-        - 'instance_id': Unique instance identifier
+        List of nucleus instances with all ground truth nuclei
     """
     nuclei_instances = []
     instance_id = 0
     
-    # Process each nucleus class (1-5, excluding background=0)
-    for class_id in range(1, 6):
-        # Create binary mask for current class
-        class_mask = (segmentation_mask == class_id).astype(np.uint8)
+    # Class names for reference
+    class_names = ['Neoplastic', 'Inflammatory', 'Connective', 'Dead', 'Epithelial']
+    
+    # Process each nucleus type channel (0-4)
+    for class_idx in range(5):
+        class_mask = mask_6channel[:, :, class_idx]  # Get this class's instance mask
         
         if class_mask.sum() == 0:
             continue
+        
+        # Find all unique instance IDs in this channel (each ID is a separate nucleus)
+        unique_ids = np.unique(class_mask)
+        unique_ids = unique_ids[unique_ids > 0]  # Exclude background (0)
+        
+        for instance_value in unique_ids:
+            # Create binary mask for this specific nucleus instance
+            nucleus_mask = (class_mask == instance_value).astype(np.uint8)
             
-        # Apply less aggressive morphological operations to preserve nuclei
-        # Only remove very small holes and objects
-        class_mask = morphology.remove_small_holes(class_mask.astype(bool), area_threshold=16)
-        class_mask = morphology.remove_small_objects(class_mask, min_size=10)  # More conservative than min_area
-        class_mask = class_mask.astype(np.uint8)
-        
-        # Find connected components
-        labeled_mask = measure.label(class_mask, connectivity=2)
-        regions = measure.regionprops(labeled_mask)
-        
-        for region in regions:
-            # Filter by area
-            if region.area < min_area or region.area > max_area:
+            # Calculate properties directly from perfect ground truth
+            labeled_mask = measure.label(nucleus_mask, connectivity=2)
+            regions = measure.regionprops(labeled_mask)
+            
+            if len(regions) == 0:
                 continue
                 
+            # Should only be one region per instance, but take the largest if multiple
+            region = max(regions, key=lambda r: r.area)
+            
+            # Apply minimal filtering (very permissive)
+            if region.area < min_area or region.area > max_area:
+                continue
+            
             # Get bounding box with padding
             y1, x1, y2, x2 = region.bbox
             
@@ -84,12 +90,12 @@ def extract_nuclei_instances(
             
             # Extract image and mask patches
             image_patch = image[y1_pad:y2_pad, x1_pad:x2_pad]
-            mask_patch = segmentation_mask[y1_pad:y2_pad, x1_pad:x2_pad]
+            mask_patch = nucleus_mask[y1_pad:y2_pad, x1_pad:x2_pad]
             
-            # Skip if patch is too small (more permissive)
-            if image_patch.shape[0] < 5 or image_patch.shape[1] < 5:
+            # Skip only if patch is impossibly small
+            if image_patch.shape[0] < 3 or image_patch.shape[1] < 3:
                 continue
-                
+            
             # Resize to target size while maintaining aspect ratio
             patch_h, patch_w = image_patch.shape[:2]
             
@@ -117,7 +123,9 @@ def extract_nuclei_instances(
             nucleus_info = {
                 'patch': final_image,
                 'mask_patch': final_mask,
-                'class_id': class_id,
+                'class_id': class_idx + 1,  # Convert 0-4 to 1-5
+                'class_name': class_names[class_idx],
+                'instance_value': int(instance_value),  # Original instance ID from mask
                 'bbox': (y1_pad, x1_pad, y2_pad, x2_pad),
                 'area': region.area,
                 'centroid': region.centroid,
@@ -141,7 +149,10 @@ def extract_nuclei_from_prediction(
     target_size: int = 224
 ) -> List[Dict]:
     """
-    Extract nuclei instances from model prediction logits.
+    Extract nuclei instances from model prediction logits using simple connected components.
+    
+    SIMPLIFIED: For predictions, we use basic connected components since we don't have
+    perfect 6-channel instance masks.
     
     Args:
         image: Input image tensor [C, H, W] (normalized)
@@ -182,14 +193,94 @@ def extract_nuclei_from_prediction(
     else:
         img_np = image
     
-    return extract_nuclei_instances(
-        image=img_np,
-        segmentation_mask=prediction_mask,
-        min_area=min_area,
-        max_area=max_area,
-        context_padding=context_padding,
-        target_size=target_size
-    )
+    # Extract nuclei using simple connected components (for predictions)
+    nuclei_instances = []
+    instance_id = 0
+    
+    # Class names for reference
+    class_names = ['Background', 'Neoplastic', 'Inflammatory', 'Connective', 'Dead', 'Epithelial']
+    
+    # Process each nucleus class (1-5, excluding background=0)
+    for class_id in range(1, 6):
+        # Create binary mask for current class
+        class_mask = (prediction_mask == class_id).astype(np.uint8)
+        
+        if class_mask.sum() == 0:
+            continue
+            
+        # Apply minimal morphological operations for predictions
+        class_mask = morphology.remove_small_holes(class_mask.astype(bool), area_threshold=16)
+        class_mask = morphology.remove_small_objects(class_mask, min_size=min_area // 2)  # Very conservative
+        class_mask = class_mask.astype(np.uint8)
+        
+        # Find connected components
+        labeled_mask = measure.label(class_mask, connectivity=2)
+        regions = measure.regionprops(labeled_mask)
+        
+        for region in regions:
+            # Filter by area
+            if region.area < min_area or region.area > max_area:
+                continue
+                
+            # Get bounding box with padding
+            y1, x1, y2, x2 = region.bbox
+            
+            # Add context padding
+            h, w = img_np.shape[:2]
+            y1_pad = max(0, y1 - context_padding)
+            x1_pad = max(0, x1 - context_padding)
+            y2_pad = min(h, y2 + context_padding)
+            x2_pad = min(w, x2 + context_padding)
+            
+            # Extract image and mask patches
+            image_patch = img_np[y1_pad:y2_pad, x1_pad:x2_pad]
+            mask_patch = (labeled_mask[y1_pad:y2_pad, x1_pad:x2_pad] == region.label).astype(np.uint8)
+            
+            # Skip if patch is too small
+            if image_patch.shape[0] < 5 or image_patch.shape[1] < 5:
+                continue
+                
+            # Resize to target size while maintaining aspect ratio
+            patch_h, patch_w = image_patch.shape[:2]
+            
+            # Calculate scaling to fit target size
+            scale = min(target_size / patch_h, target_size / patch_w)
+            new_h = int(patch_h * scale)
+            new_w = int(patch_w * scale)
+            
+            # Resize image and mask
+            image_resized = cv2.resize(image_patch, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            mask_resized = cv2.resize(mask_patch, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+            
+            # Pad to target size with zeros
+            final_image = np.zeros((target_size, target_size, 3), dtype=np.uint8)
+            final_mask = np.zeros((target_size, target_size), dtype=np.uint8)
+            
+            # Center the resized patch
+            start_y = (target_size - new_h) // 2
+            start_x = (target_size - new_w) // 2
+            
+            final_image[start_y:start_y+new_h, start_x:start_x+new_w] = image_resized
+            final_mask[start_y:start_y+new_h, start_x:start_x+new_w] = mask_resized
+            
+            # Store nucleus instance
+            nucleus_info = {
+                'patch': final_image,
+                'mask_patch': final_mask,
+                'class_id': class_id,
+                'class_name': class_names[class_id],
+                'bbox': (y1_pad, x1_pad, y2_pad, x2_pad),
+                'area': region.area,
+                'centroid': region.centroid,
+                'instance_id': instance_id,
+                'original_size': (patch_h, patch_w),
+                'scale_factor': scale
+            }
+            
+            nuclei_instances.append(nucleus_info)
+            instance_id += 1
+    
+    return nuclei_instances
 
 
 def visualize_extracted_nuclei(
@@ -420,8 +511,8 @@ def load_nucleus_image(image_path: str) -> np.ndarray:
 def prepare_classifier_dataset(
     dataset_root: str = 'Dataset',
     output_dir: str = 'nuclei_dataset',
-    min_area: int = 20,
-    max_area: int = 10000,
+    min_area: int = 10,
+    max_area: int = 50000,
     context_padding: int = 32,
     max_samples: int = None,
     visualize_samples: int = 20
@@ -429,11 +520,13 @@ def prepare_classifier_dataset(
     """
     Complete pipeline to prepare nuclei classification dataset from PanNuke ground truth.
     
+    SIMPLIFIED: Uses 6-channel instance masks directly for perfect extraction!
+    
     Args:
         dataset_root: Root directory of PanNuke dataset
         output_dir: Directory to save extracted nuclei dataset
-        min_area: Minimum nucleus area in pixels
-        max_area: Maximum nucleus area in pixels
+        min_area: Minimum nucleus area in pixels (very permissive)
+        max_area: Maximum nucleus area in pixels (very permissive)
         context_padding: Context padding around nuclei
         max_samples: Maximum number of samples to process (None for all)
         visualize_samples: Number of extracted nuclei to visualize
@@ -445,13 +538,14 @@ def prepare_classifier_dataset(
     from tqdm import tqdm
     import json
     
-    print("🧬 PREPARING NUCLEI CLASSIFICATION DATASET")
+    print("🧬 PREPARING NUCLEI CLASSIFICATION DATASET (SIMPLIFIED)")
     print("="*60)
     print(f"Dataset root: {dataset_root}")
     print(f"Output directory: {output_dir}")
-    print(f"Area range: {min_area} - {max_area} pixels")
+    print(f"Area range: {min_area} - {max_area} pixels (very permissive)")
     print(f"Context padding: {context_padding} pixels")
-    print(f"Using: GROUND TRUTH annotations")
+    print(f"Method: Direct 6-channel instance mask extraction")
+    print(f"Source: Ground truth annotations")
     print("="*60)
     
     # Import here to avoid circular imports
@@ -461,9 +555,73 @@ def prepare_classifier_dataset(
         # Handle direct execution from utils directory
         from pannuke_dataset import PanNukeDataset
     
-    # Load dataset
-    print("📂 Loading PanNuke dataset...")
-    dataset = PanNukeDataset(
+    # Custom dataset class to access raw 6-channel masks
+    class PanNuke6ChannelDataset(PanNukeDataset):
+        def __getitem__(self, idx: int):
+            """Modified to return both processed masks and raw 6-channel masks."""
+            if self.storage_mode == "files":
+                img_path = self.image_paths[idx]
+                mask_path = self.mask_paths[idx]
+                
+                import cv2
+                image = cv2.imread(img_path)
+                if image is None:
+                    raise IOError(f"Failed to read image file: {img_path}")
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                
+                mask_6channel = np.load(mask_path)
+                if mask_6channel.ndim == 2:
+                    mask_onehot = np.zeros((*mask_6channel.shape, 6), dtype=np.uint8)
+                    for c in range(1, 7):
+                        mask_onehot[:, :, c - 1] = (mask_6channel == c).astype(np.uint8)
+                    mask_6channel = mask_onehot
+            else:
+                part_idx, local_idx = self._index_map[idx]
+                imgs_arr = self._parts_images[part_idx]
+                masks_arr = self._parts_masks[part_idx]
+                
+                image = imgs_arr[local_idx]
+                mask_6channel = masks_arr[local_idx]
+            
+            # Ensure contiguous memory layout and proper data types
+            image = np.ascontiguousarray(image).astype(np.uint8)
+            mask_6channel = np.ascontiguousarray(mask_6channel)
+            
+            # Apply built-in preprocessing to image only
+            if self.augmentations is not None:
+                augmented = self.augmentations(image=image)
+                image = augmented["image"]
+            
+            # Apply only image transforms (resize, CLAHE, Z-score) 
+            import albumentations as A
+            from albumentations.pytorch import ToTensorV2
+            
+            # Handle imports for both execution contexts
+            try:
+                from utils.pannuke_dataset import CLAHETransform, ZScoreTransform
+            except ImportError:
+                from pannuke_dataset import CLAHETransform, ZScoreTransform
+            
+            transforms = []
+            if self.base_size is not None:
+                transforms.append(A.Resize(self.base_size, self.base_size))
+            transforms.extend([
+                CLAHETransform(),
+                ZScoreTransform(),
+                ToTensorV2()
+            ])
+            
+            transform = A.Compose(transforms)
+            transformed = transform(image=image)
+            
+            return {
+                "image": transformed["image"], 
+                "mask_6channel": mask_6channel  # Return raw 6-channel mask
+            }
+    
+    # Load dataset with 6-channel mask access
+    print("📂 Loading PanNuke dataset with 6-channel mask access...")
+    dataset = PanNuke6ChannelDataset(
         root=dataset_root,
         augmentations=None,  # No augmentations for extraction
         validate_dataset=False,
@@ -482,31 +640,35 @@ def prepare_classifier_dataset(
     sample_count = 0
     nuclei_count = 0
     
-    for idx in tqdm(range(total_samples), desc="Extracting nuclei from ground truth"):
+    for idx in tqdm(range(total_samples), desc="Extracting nuclei from 6-channel ground truth"):
         try:
             # Get sample from dataset
             sample = dataset[idx]
             image_tensor = sample['image']  # [C, H, W]
-            ground_truth_mask = sample['mask']  # [H, W]
+            mask_6channel = sample['mask_6channel']  # [H, W, 6]
             
             # Convert image tensor back to numpy for extraction
             image_np = image_tensor.cpu().numpy()
             if image_np.ndim == 3 and image_np.shape[0] == 3:
                 image_np = np.transpose(image_np, (1, 2, 0))  # C,H,W -> H,W,C
             
-            # Denormalize from Z-score normalization (approximate)
-            img_min, img_max = image_np.min(), image_np.max()
-            if img_max > img_min:
-                image_np = (image_np - img_min) / (img_max - img_min)
-            image_np = np.clip(image_np * 255, 0, 255).astype(np.uint8)
+            # Improved denormalization for Z-score normalized data
+            if image_np.dtype == np.float32 or image_np.dtype == np.float64:
+                img_clipped = np.clip(image_np, -3, 3)
+                img_min, img_max = img_clipped.min(), img_clipped.max()
+                if img_max > img_min:
+                    image_np = ((img_clipped - img_min) / (img_max - img_min) * 255).astype(np.uint8)
+                else:
+                    image_np = np.zeros_like(img_clipped, dtype=np.uint8)
+            elif image_np.max() <= 1.0:
+                image_np = (image_np * 255).astype(np.uint8)
+            else:
+                image_np = np.clip(image_np, 0, 255).astype(np.uint8)
             
-            # Use ground truth mask for extraction
-            gt_mask_np = ground_truth_mask.cpu().numpy()
-            
-            # Extract nuclei instances from ground truth
+            # Extract nuclei instances using 6-channel masks (default and recommended)
             nuclei_instances = extract_nuclei_instances(
                 image=image_np,
-                segmentation_mask=gt_mask_np,
+                mask_6channel=mask_6channel,
                 min_area=min_area,
                 max_area=max_area,
                 context_padding=context_padding,
@@ -529,6 +691,8 @@ def prepare_classifier_dataset(
             
         except Exception as e:
             print(f"⚠️  Error processing sample {idx}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     print(f"\n✅ Extraction complete!")
@@ -619,10 +783,10 @@ if __name__ == '__main__':
                        help='Directory to save extracted nuclei dataset')
     
     # Processing arguments
-    parser.add_argument('--min_area', type=int, default=20,
-                       help='Minimum nucleus area in pixels')
-    parser.add_argument('--max_area', type=int, default=10000,
-                       help='Maximum nucleus area in pixels')
+    parser.add_argument('--min_area', type=int, default=10,
+                       help='Minimum nucleus area in pixels (very permissive)')
+    parser.add_argument('--max_area', type=int, default=50000,
+                       help='Maximum nucleus area in pixels (very permissive)')
     parser.add_argument('--context_padding', type=int, default=32,
                        help='Context padding around nuclei')
     
