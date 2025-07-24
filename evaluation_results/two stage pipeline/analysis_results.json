@@ -1,0 +1,51 @@
+{
+  "image_path": "array_input",
+  "original_size": [
+    256,
+    256
+  ],
+  "nuclei_count": 19,
+  "statistics": {
+    "total_count": 19,
+    "class_distribution": {
+      "Neoplastic": 14,
+      "Inflammatory": 1,
+      "Connective": 4
+    },
+    "area_stats": {
+      "mean": 672.1578947368421,
+      "std": 605.7186478328119,
+      "min": 55.0,
+      "max": 2353.0,
+      "median": 569.0
+    },
+    "stage_agreement": 0.7368421052631579,
+    "confidence_stats": {
+      "mean": 0.26653008241402476,
+      "std": 0.016274309498585396,
+      "min": 0.24157388508319855,
+      "max": 0.3034156858921051,
+      "median": 0.26306653022766113
+    },
+    "class_confidence": {
+      "Neoplastic": {
+        "mean": 0.26047248606170925,
+        "count": 14
+      },
+      "Inflammatory": {
+        "mean": 0.3034156858921051,
+        "count": 1
+      },
+      "Connective": {
+        "mean": 0.27851026877760887,
+        "count": 4
+      }
+    }
+  },
+  "processing_info": {
+    "min_nucleus_area": 50,
+    "max_nucleus_area": 5000,
+    "context_padding": 32,
+    "device": "cuda"
+  }
+}

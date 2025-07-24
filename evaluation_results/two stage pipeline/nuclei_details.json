@@ -1,0 +1,515 @@
+[
+  {
+    "instance_id": 0,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.27202317118644714,
+    "area": 1410.0,
+    "bbox": [
+      0,
+      0,
+      64,
+      98
+    ],
+    "centroid": [
+      13.839007092198582,
+      37.92056737588653
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.27202317118644714,
+      0.17875240743160248,
+      0.183920755982399,
+      0.1779734194278717,
+      0.1873302012681961
+    ]
+  },
+  {
+    "instance_id": 1,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.27056702971458435,
+    "area": 119.0,
+    "bbox": [
+      0,
+      39,
+      40,
+      120
+    ],
+    "centroid": [
+      3.176470588235294,
+      78.82352941176471
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.27056702971458435,
+      0.17897844314575195,
+      0.18943773210048676,
+      0.17501242458820343,
+      0.1860043704509735
+    ]
+  },
+  {
+    "instance_id": 2,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.2682811915874481,
+    "area": 262.0,
+    "bbox": [
+      0,
+      47,
+      57,
+      135
+    ],
+    "centroid": [
+      15.858778625954198,
+      91.07251908396947
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.2682811915874481,
+      0.17630745470523834,
+      0.19529509544372559,
+      0.17568562924861908,
+      0.18443067371845245
+    ]
+  },
+  {
+    "instance_id": 3,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.251671701669693,
+    "area": 145.0,
+    "bbox": [
+      0,
+      0,
+      79,
+      43
+    ],
+    "centroid": [
+      37.02068965517241,
+      3.9379310344827587
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.251671701669693,
+      0.173495814204216,
+      0.2225024700164795,
+      0.17960219085216522,
+      0.17272786796092987
+    ]
+  },
+  {
+    "instance_id": 4,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.25288382172584534,
+    "area": 1380.0,
+    "bbox": [
+      23,
+      71,
+      145,
+      185
+    ],
+    "centroid": [
+      83.16811594202899,
+      128.2521739130435
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.25288382172584534,
+      0.17942310869693756,
+      0.20388928055763245,
+      0.18349836766719818,
+      0.18030542135238647
+    ]
+  },
+  {
+    "instance_id": 5,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.3034156858921051,
+    "area": 569.0,
+    "bbox": [
+      32,
+      21,
+      122,
+      119
+    ],
+    "centroid": [
+      76.77328646748681,
+      69.82601054481546
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.17974670231342316,
+      0.3034156858921051,
+      0.24132052063941956,
+      0.13375946879386902,
+      0.14175760746002197
+    ]
+  },
+  {
+    "instance_id": 6,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.25890082120895386,
+    "area": 1010.0,
+    "bbox": [
+      40,
+      125,
+      152,
+      227
+    ],
+    "centroid": [
+      96.27029702970297,
+      173.5821782178218
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.25890082120895386,
+      0.1822725087404251,
+      0.19907818734645844,
+      0.1783219426870346,
+      0.1814265102148056
+    ]
+  },
+  {
+    "instance_id": 7,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.24866823852062225,
+    "area": 212.0,
+    "bbox": [
+      53,
+      211,
+      146,
+      256
+    ],
+    "centroid": [
+      98.93396226415095,
+      250.91509433962264
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.24866823852062225,
+      0.17112724483013153,
+      0.22478508949279785,
+      0.18840689957141876,
+      0.1670125275850296
+    ]
+  },
+  {
+    "instance_id": 8,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.2884669601917267,
+    "area": 753.0,
+    "bbox": [
+      64,
+      42,
+      151,
+      157
+    ],
+    "centroid": [
+      108.3652058432935,
+      99.30942895086321
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.2146209180355072,
+      0.16361311078071594,
+      0.2884669601917267,
+      0.17190274596214294,
+      0.16139629483222961
+    ]
+  },
+  {
+    "instance_id": 9,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.2977210581302643,
+    "area": 103.0,
+    "bbox": [
+      104,
+      70,
+      177,
+      149
+    ],
+    "centroid": [
+      140.2135922330097,
+      108.95145631067962
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.18063034117221832,
+      0.17053698003292084,
+      0.2977210581302643,
+      0.179544135928154,
+      0.17156746983528137
+    ]
+  },
+  {
+    "instance_id": 10,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.28627917170524597,
+    "area": 1232.0,
+    "bbox": [
+      106,
+      10,
+      200,
+      171
+    ],
+    "centroid": [
+      154.03733766233765,
+      87.70454545454545
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.19848567247390747,
+      0.17245392501354218,
+      0.28627917170524597,
+      0.17521508038043976,
+      0.16756615042686462
+    ]
+  },
+  {
+    "instance_id": 11,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.24157388508319855,
+    "area": 83.0,
+    "bbox": [
+      111,
+      0,
+      185,
+      50
+    ],
+    "centroid": [
+      147.3855421686747,
+      11.19277108433735
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.2096468061208725,
+      0.20837238430976868,
+      0.24157388508319855,
+      0.1864708811044693,
+      0.15393604338169098
+    ]
+  },
+  {
+    "instance_id": 12,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.2546636462211609,
+    "area": 297.0,
+    "bbox": [
+      142,
+      0,
+      238,
+      57
+    ],
+    "centroid": [
+      184.72727272727272,
+      7.346801346801347
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.2546636462211609,
+      0.1845969408750534,
+      0.20661452412605286,
+      0.17883549630641937,
+      0.17528946697711945
+    ]
+  },
+  {
+    "instance_id": 13,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.26580122113227844,
+    "area": 1155.0,
+    "bbox": [
+      145,
+      182,
+      253,
+      256
+    ],
+    "centroid": [
+      198.07186147186147,
+      232.9844155844156
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.26580122113227844,
+      0.1807224601507187,
+      0.18798013031482697,
+      0.1785355657339096,
+      0.18696054816246033
+    ]
+  },
+  {
+    "instance_id": 14,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.26493504643440247,
+    "area": 2353.0,
+    "bbox": [
+      149,
+      62,
+      256,
+      215
+    ],
+    "centroid": [
+      209.28091797705056,
+      140.00807479813005
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.26493504643440247,
+      0.18014110624790192,
+      0.18332602083683014,
+      0.18493661284446716,
+      0.18666121363639832
+    ]
+  },
+  {
+    "instance_id": 15,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.25834572315216064,
+    "area": 846.0,
+    "bbox": [
+      176,
+      2,
+      256,
+      120
+    ],
+    "centroid": [
+      222.62529550827423,
+      58.684397163120565
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.25834572315216064,
+      0.17571225762367249,
+      0.21473996341228485,
+      0.17878007888793945,
+      0.17242197692394257
+    ]
+  },
+  {
+    "instance_id": 16,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.26306653022766113,
+    "area": 594.0,
+    "bbox": [
+      199,
+      179,
+      256,
+      256
+    ],
+    "centroid": [
+      244.5117845117845,
+      225.21212121212122
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.26306653022766113,
+      0.1813725084066391,
+      0.18560226261615753,
+      0.18252725899219513,
+      0.1874314695596695
+    ]
+  },
+  {
+    "instance_id": 17,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.26123034954071045,
+    "area": 193.0,
+    "bbox": [
+      211,
+      149,
+      256,
+      232
+    ],
+    "centroid": [
+      250.0103626943005,
+      190.6580310880829
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.26123034954071045,
+      0.1827915906906128,
+      0.19147926568984985,
+      0.1790984869003296,
+      0.18540030717849731
+    ]
+  },
+  {
+    "instance_id": 18,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.25557631254196167,
+    "area": 55.0,
+    "bbox": [
+      215,
+      104,
+      256,
+      177
+    ],
+    "centroid": [
+      251.70909090909092,
+      140.34545454545454
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.25557631254196167,
+      0.18751303851604462,
+      0.19562985002994537,
+      0.1798660010099411,
+      0.18141476809978485
+    ]
+  }
+]
