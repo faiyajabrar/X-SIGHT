@@ -20,8 +20,8 @@ warnings.filterwarnings('ignore')
 def extract_nuclei_instances(
     image: np.ndarray,
     segmentation_mask: np.ndarray,
-    min_area: int = 50,
-    max_area: int = 5000,
+    min_area: int = 20,
+    max_area: int = 10000,
     context_padding: int = 32,
     target_size: int = 224
 ) -> List[Dict]:
@@ -57,10 +57,10 @@ def extract_nuclei_instances(
         if class_mask.sum() == 0:
             continue
             
-        # Apply morphological operations to clean up the mask
-        # Remove small holes and smooth boundaries
-        class_mask = morphology.remove_small_holes(class_mask.astype(bool), area_threshold=64)
-        class_mask = morphology.remove_small_objects(class_mask, min_size=min_area)
+        # Apply less aggressive morphological operations to preserve nuclei
+        # Only remove very small holes and objects
+        class_mask = morphology.remove_small_holes(class_mask.astype(bool), area_threshold=16)
+        class_mask = morphology.remove_small_objects(class_mask, min_size=10)  # More conservative than min_area
         class_mask = class_mask.astype(np.uint8)
         
         # Find connected components
@@ -86,8 +86,8 @@ def extract_nuclei_instances(
             image_patch = image[y1_pad:y2_pad, x1_pad:x2_pad]
             mask_patch = segmentation_mask[y1_pad:y2_pad, x1_pad:x2_pad]
             
-            # Skip if patch is too small
-            if image_patch.shape[0] < 10 or image_patch.shape[1] < 10:
+            # Skip if patch is too small (more permissive)
+            if image_patch.shape[0] < 5 or image_patch.shape[1] < 5:
                 continue
                 
             # Resize to target size while maintaining aspect ratio
@@ -135,8 +135,8 @@ def extract_nuclei_instances(
 def extract_nuclei_from_prediction(
     image: torch.Tensor,
     prediction_logits: torch.Tensor,
-    min_area: int = 50,
-    max_area: int = 5000,
+    min_area: int = 20,
+    max_area: int = 10000,
     context_padding: int = 32,
     target_size: int = 224
 ) -> List[Dict]:
@@ -420,8 +420,8 @@ def load_nucleus_image(image_path: str) -> np.ndarray:
 def prepare_classifier_dataset(
     dataset_root: str = 'Dataset',
     output_dir: str = 'nuclei_dataset',
-    min_area: int = 50,
-    max_area: int = 5000,
+    min_area: int = 20,
+    max_area: int = 10000,
     context_padding: int = 32,
     max_samples: int = None,
     visualize_samples: int = 20
@@ -619,9 +619,9 @@ if __name__ == '__main__':
                        help='Directory to save extracted nuclei dataset')
     
     # Processing arguments
-    parser.add_argument('--min_area', type=int, default=50,
+    parser.add_argument('--min_area', type=int, default=20,
                        help='Minimum nucleus area in pixels')
-    parser.add_argument('--max_area', type=int, default=5000,
+    parser.add_argument('--max_area', type=int, default=10000,
                        help='Maximum nucleus area in pixels')
     parser.add_argument('--context_padding', type=int, default=32,
                        help='Context padding around nuclei')
