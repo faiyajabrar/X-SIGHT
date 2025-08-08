@@ -376,9 +376,11 @@ def main():
                        help='Sample index to demonstrate')
     
     # Model arguments (with auto-detection)
-    parser.add_argument('--segmentation_model', type=str, default=None,
+    parser.add_argument('--segmentation_model', type=str, 
+                       default='lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=112-val_dice=0.656.ckpt',
                        help='Path to segmentation model (auto-detected if not provided)')
-    parser.add_argument('--classifier_model', type=str, default=None,
+    parser.add_argument('--classifier_model', type=str, 
+                       default='lightning_logs/classifier/classifier_efficientnet_b3_20250727_002713/version_0/checkpoints/classifier-epoch=19-val_f1=0.806.ckpt',
                        help='Path to classifier model (auto-detected if not provided)')
     
     # Output arguments

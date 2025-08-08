@@ -436,7 +436,7 @@ def main():
     """Main evaluation function."""
     parser = argparse.ArgumentParser(description='Evaluate Attention U-Net model')
     parser.add_argument('--checkpoint', type=str, 
-                       default='lightning_logs/version_1/checkpoints/advanced-epoch=112-val_dice=0.656.ckpt',
+                       default='lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=112-val_dice=0.656.ckpt',
                        help='Path to model checkpoint')
     parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'],
                        help='Device to run evaluation on')

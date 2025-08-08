@@ -334,7 +334,7 @@ class NucleusClassifierEvaluator:
         
         # Load dataset split if using validation
         if use_validation_split:
-            split_path = Path('lightning_logs/dataset_split.json')
+            split_path = Path('lightning_logs/classifier/dataset_split.json')
             if split_path.exists():
                 with open(split_path, 'r') as f:
                     split_data = json.load(f)
@@ -514,7 +514,7 @@ def main():
     """Main evaluation function."""
     parser = argparse.ArgumentParser(description='Evaluate State-of-the-Art Nucleus Classifier')
     parser.add_argument('--checkpoint', type=str, 
-                       default='lightning_logs/classifier/classifier_efficientnet_b3_20250724_002315/version_0/checkpoints/classifier-epoch=04-val_f1=0.789.ckpt',
+                       default='lightning_logs/classifier/classifier_efficientnet_b3_20250727_002713/version_0/checkpoints/classifier-epoch=19-val_f1=0.806.ckpt',
                        help='Path to classifier checkpoint')
     parser.add_argument('--dataset', type=str, default='nuclei_dataset.pkl',
                        help='Path to nuclei dataset')

@@ -784,7 +784,7 @@ def main():
                        default='lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=12-val_dice=0.656.ckpt',
                        help='Path to trained segmentation model checkpoint')
     parser.add_argument('--classifier_model', type=str,
-                       default='lightning_logs/classifier/classifier_efficientnet_b3_20250724_002315/version_0/checkpoints/classifier-epoch=04-val_f1=0.789.ckpt',
+                       default='lightning_logs/classifier/classifier_efficientnet_b3_20250727_002713/version_0/checkpoints/classifier-epoch=19-val_f1=0.806.ckpt',
                        help='Path to trained state-of-the-art classifier checkpoint (.ckpt file from Lightning)')
     
     # Input/output
