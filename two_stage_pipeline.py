@@ -25,6 +25,11 @@ import json
 from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
+try:
+    import shap
+    HAS_SHAP = True
+except Exception:
+    HAS_SHAP = False
 
 # Import project modules
 from training.train_segmentation import AdvancedAttentionModel
@@ -52,7 +57,15 @@ class TwoStageNucleiPipeline:
         segmentation_threshold: float = 0.5,
         min_nucleus_area: int = 50,
         max_nucleus_area: int = 5000,
-        context_padding: int = 32
+        context_padding: int = 32,
+        # Explainability
+        enable_gradcam: bool = True,
+        enable_shap: bool = True,
+        gradcam_layer_idx: int = -2,
+        gradcam_blur_ksize: int = 3,
+        gradcam_blur_sigma: float = 0.0,
+        shap_bg: int = 8,
+        shap_nsamples: int = 20
     ):
         """
         Initialize the two-stage pipeline.
@@ -71,6 +84,15 @@ class TwoStageNucleiPipeline:
         self.min_nucleus_area = min_nucleus_area
         self.max_nucleus_area = max_nucleus_area
         self.context_padding = context_padding
+        
+        # Explainability settings
+        self.enable_gradcam = enable_gradcam
+        self.enable_shap = enable_shap and HAS_SHAP
+        self.gradcam_layer_idx = gradcam_layer_idx
+        self.gradcam_blur_ksize = gradcam_blur_ksize
+        self.gradcam_blur_sigma = gradcam_blur_sigma
+        self.shap_bg = shap_bg
+        self.shap_nsamples = shap_nsamples
         
         # Class names and colors (Background at index 0, excluded from classification)
         self.class_names = ['Background', 'Neoplastic', 'Inflammatory', 'Connective', 'Dead', 'Epithelial']
@@ -95,6 +117,16 @@ class TwoStageNucleiPipeline:
         
         # Set up preprocessing
         self.setup_preprocessing()
+        
+        # Grad-CAM buffers
+        self._gc_activations = None
+        self._gc_forward_handle = None
+        self._register_gradcam_hooks()
+        
+        # Placeholder output dir for explanations (set during analyze)
+        self._current_output_dir: Optional[Path] = None
+        self._shap_summaries: List[Dict] = []
+        self._explain_quality_records: List[Dict] = []
         
         print("✅ Two-Stage Pipeline initialized successfully!")
     
@@ -135,6 +167,23 @@ class TwoStageNucleiPipeline:
             print(f"   Classification classes: {', '.join(self.classification_classes)}")
         
         print("✅ State-of-the-art classifier model loaded successfully!")
+        # Try to load training_state.json path hint if present
+        try:
+            ts_path = Path('lightning_logs/classifier/training_state.json')
+            if ts_path.exists():
+                print(f"ℹ️  Training state file found: {ts_path}")
+        except Exception:
+            pass
+        
+        # SHAP wrappers for probabilities
+        class _ProbsWrapper(torch.nn.Module):
+            def __init__(self, base_model):
+                super().__init__()
+                self.base_model = base_model
+            def forward(self, x):
+                out = self.base_model(x)
+                return torch.softmax(out['logits'], dim=1)
+        self._model_probs = _ProbsWrapper(self.classifier_model)
     
     def setup_preprocessing(self):
         """Set up image preprocessing transforms."""
@@ -256,6 +305,7 @@ class TwoStageNucleiPipeline:
         
         # Prepare batch of nucleus patches
         patches = []
+        patch_tensors = []
         for nucleus in nuclei_instances:
             patch = nucleus['patch']  # Already 224x224x3
             
@@ -263,6 +313,7 @@ class TwoStageNucleiPipeline:
             transformed = self.classification_transforms(image=patch)
             patch_tensor = transformed['image']
             patches.append(patch_tensor)
+            patch_tensors.append(patch_tensor)
         
         # Create batch
         batch = torch.stack(patches).to(self.device)
@@ -276,6 +327,25 @@ class TwoStageNucleiPipeline:
             confidence_scores = torch.max(probabilities, dim=1)[0]
         
         # Update nucleus instances with refined classifications
+        # Prepare SHAP explainer (use first N patches as background)
+        explainer = None
+        if self.enable_shap:
+            try:
+                bg_count = min(max(1, self.shap_bg), len(patch_tensors))
+                background = torch.stack(patch_tensors[:bg_count]).to(self.device).float()
+                background.requires_grad_(False)
+                self._model_probs.eval()
+                explainer = shap.GradientExplainer(self._model_probs, background)
+            except Exception as e:
+                print(f"⚠️  SHAP explainer init failed: {e}")
+                explainer = None
+                self.enable_shap = False
+        
+        explanations_dir = None
+        if self._current_output_dir is not None:
+            explanations_dir = self._current_output_dir / 'explanations'
+            explanations_dir.mkdir(exist_ok=True, parents=True)
+        
         for i, nucleus in enumerate(nuclei_instances):
             # Map from classifier output (0-4) back to original class IDs (1-5)
             # Classifier outputs: 0=Neoplastic, 1=Inflammatory, 2=Connective, 3=Dead, 4=Epithelial
@@ -300,9 +370,264 @@ class TwoStageNucleiPipeline:
             
             # Agreement between stages
             nucleus['stage_agreement'] = (nucleus['segmentation_class_id'] == refined_class_id)
+            
+            # Explanations per nucleus
+            if explanations_dir is not None:
+                # Grad-CAM
+                if self.enable_gradcam:
+                    try:
+                        heatmap_uint8, overlay_rgb = self.generate_gradcam(patch_tensors[i].unsqueeze(0), predicted_classes[i].item())
+                        cv2.imwrite(str(explanations_dir / f'gradcam_nucleus_{nucleus["instance_id"]}.png'), cv2.cvtColor(overlay_rgb, cv2.COLOR_RGB2BGR))
+                        cv2.imwrite(str(explanations_dir / f'gradcam_heatmap_{nucleus["instance_id"]}.png'), heatmap_uint8)
+                        nucleus['gradcam_path'] = str(explanations_dir / f'gradcam_nucleus_{nucleus["instance_id"]}.png')
+                    except Exception as e:
+                        print(f"⚠️  Grad-CAM failed for nucleus {nucleus['instance_id']}: {e}")
+                        heatmap_uint8 = None
+                else:
+                    heatmap_uint8 = None
+                # SHAP
+                if self.enable_shap and explainer is not None:
+                    try:
+                        img_b = patch_tensors[i].unsqueeze(0).to(self.device).float().detach()
+                        img_b.requires_grad_(True)
+                        result = explainer.shap_values(img_b, nsamples=self.shap_nsamples, ranked_outputs=1, output_rank_order='max')
+                        if isinstance(result, tuple) and len(result) == 2:
+                            shap_values, indexes = result
+                        else:
+                            shap_values, indexes = result, None
+                        # Unpack to array [C,H,W]
+                        sv = None
+                        if isinstance(shap_values, list):
+                            arr = shap_values[0]
+                            if isinstance(arr, torch.Tensor):
+                                arr = arr.detach().cpu().numpy()
+                            sv = arr[0]
+                        elif isinstance(shap_values, np.ndarray):
+                            sv = shap_values[0]
+                        elif isinstance(shap_values, torch.Tensor):
+                            sv = shap_values[0].detach().cpu().numpy()
+                        if sv is not None:
+                            if sv.ndim == 4:
+                                sv = np.squeeze(sv)
+                            if sv.ndim == 3 and sv.shape[-1] in (1,3):
+                                sv = np.transpose(sv, (2,0,1))
+                            if sv.ndim == 2:
+                                sv = np.expand_dims(sv, 0)
+                            sv_abs = np.abs(sv).sum(axis=0).astype(np.float32)
+                            H, W = sv_abs.shape
+                            if (H, W) != (224, 224):
+                                sv_abs = cv2.resize(sv_abs, (224, 224))
+                            if sv_abs.max() > 0:
+                                sv_abs = sv_abs / (sv_abs.max() + 1e-8)
+                            heat_uint8 = np.uint8(255 * sv_abs)
+                            heat_color = cv2.applyColorMap(heat_uint8, cv2.COLORMAP_VIRIDIS)
+                            # Prepare original vis from tensor
+                            img = patch_tensors[i].detach().cpu().numpy()
+                            if img.shape[0] == 3:
+                                img = np.transpose(img, (1,2,0))
+                            if img.max() <= 1.0 + 1e-3:
+                                img_vis = (img * 255.0).clip(0,255).astype(np.uint8)
+                            else:
+                                img_vis = img.clip(0,255).astype(np.uint8)
+                            if heat_color.shape[:2] != img_vis.shape[:2]:
+                                heat_color = cv2.resize(heat_color, (img_vis.shape[1], img_vis.shape[0]))
+                            ov_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.6, heat_color, 0.4, 0)
+                            ov_rgb = cv2.cvtColor(ov_bgr, cv2.COLOR_BGR2RGB)
+                            cv2.imwrite(str(explanations_dir / f'shap_nucleus_{nucleus["instance_id"]}.png'), cv2.cvtColor(ov_rgb, cv2.COLOR_RGB2BGR))
+                            cv2.imwrite(str(explanations_dir / f'shap_heatmap_{nucleus["instance_id"]}.png'), heat_uint8)
+                            nucleus['shap_path'] = str(explanations_dir / f'shap_nucleus_{nucleus["instance_id"]}.png')
+                            # Simple stats
+                            pos_contrib = float(np.mean(sv[sv > 0])) if np.any(sv > 0) else 0.0
+                            neg_contrib = float(np.mean(sv[sv < 0])) if np.any(sv < 0) else 0.0
+                            self._shap_summaries.append({
+                                'nucleus_id': int(nucleus['instance_id']),
+                                'predicted_class': int(predicted_classes[i].item()),
+                                'predicted_class_name': self.classification_classes[predicted_classes[i].item()],
+                                'confidence': float(confidence_scores[i].item()),
+                                'mean_positive_contribution': pos_contrib,
+                                'mean_negative_contribution': neg_contrib,
+                                'mean_abs_contribution': float(np.mean(np.abs(sv)))
+                            })
+                        else:
+                            heat_uint8 = None
+                    except Exception as e:
+                        print(f"⚠️  SHAP failed for nucleus {nucleus['instance_id']}: {e}")
+                        heat_uint8 = None
+                else:
+                    heat_uint8 = None
+                
+                # Quality metrics per nucleus
+                try:
+                    gcm = None
+                    scm = None
+                    corr = None
+                    if isinstance(heatmap_uint8, np.ndarray):
+                        hm = heatmap_uint8.astype(np.float32) / 255.0
+                        Hc, Wc = hm.shape
+                        cy, cx = Hc // 2, Wc // 2
+                        hy, hx = int(Hc * 0.3), int(Wc * 0.3)
+                        y1, y2 = max(0, cy - hy), min(Hc, cy + hy)
+                        x1, x2 = max(0, cx - hx), min(Wc, cx + hx)
+                        total = float(hm.sum()) + 1e-8
+                        gcm = float(hm[y1:y2, x1:x2].sum() / total) if total > 0 else 0.0
+                    if isinstance(heat_uint8, np.ndarray):
+                        sm = heat_uint8.astype(np.float32) / 255.0
+                        Hs, Ws = sm.shape
+                        cy, cx = Hs // 2, Ws // 2
+                        hy, hx = int(Hs * 0.3), int(Ws * 0.3)
+                        y1, y2 = max(0, cy - hy), min(Hs, cy + hy)
+                        x1, x2 = max(0, cx - hx), min(Ws, cx + hx)
+                        total_s = float(sm.sum()) + 1e-8
+                        scm = float(sm[y1:y2, x1:x2].sum() / total_s) if total_s > 0 else 0.0
+                    if isinstance(heatmap_uint8, np.ndarray) and isinstance(heat_uint8, np.ndarray):
+                        a = (heatmap_uint8.astype(np.float32) / 255.0).flatten()
+                        b = (heat_uint8.astype(np.float32) / 255.0).flatten()
+                        if a.std() > 1e-6 and b.std() > 1e-6:
+                            corr = float(np.corrcoef(a, b)[0, 1])
+                    self._explain_quality_records.append({
+                        'nucleus_id': int(nucleus['instance_id']),
+                        'predicted_class': int(predicted_classes[i].item()),
+                        'predicted_class_name': self.classification_classes[predicted_classes[i].item()],
+                        'confidence': float(confidence_scores[i].item()),
+                        'gradcam_center_mass': gcm,
+                        'shap_center_mass': scm,
+                        'shap_gradcam_corr': corr
+                    })
+                except Exception:
+                    pass
         
         print("✅ Classification complete!")
         return nuclei_instances
+
+    # ---------------------- Explainability: Grad-CAM ----------------------
+    def _register_gradcam_hooks(self):
+        if not hasattr(self, 'classifier_model'):
+            return
+        backbone = getattr(self.classifier_model, 'backbone', None)
+        if backbone is None:
+            return
+        # Resolve module by feature_info index
+        def _get_submodule(root: torch.nn.Module, path: str):
+            if hasattr(root, 'get_submodule'):
+                try:
+                    return root.get_submodule(path)
+                except Exception:
+                    pass
+            module = root
+            for name in path.split('.'):
+                module = getattr(module, name)
+            return module
+        target_module = None
+        try:
+            fi = getattr(backbone, 'feature_info', None)
+            if fi is not None and len(fi) > 0:
+                idx = self.gradcam_layer_idx
+                nfi = len(fi)
+                if idx < 0:
+                    idx = nfi + idx
+                idx = max(0, min(idx, nfi - 1))
+                info = fi[idx]
+                module_path = info.get('module', None) or info.get('name', None)
+                if isinstance(module_path, str):
+                    if hasattr(backbone, 'body'):
+                        try:
+                            target_module = _get_submodule(backbone.body, module_path)
+                        except Exception:
+                            target_module = None
+                    if target_module is None:
+                        target_module = _get_submodule(backbone, module_path)
+        except Exception:
+            target_module = None
+        if target_module is None:
+            conv_layers = [m for m in backbone.modules() if isinstance(m, torch.nn.Conv2d)]
+            if conv_layers:
+                target_module = conv_layers[-1]
+        if target_module is None:
+            return
+        if self._gc_forward_handle is not None:
+            try:
+                self._gc_forward_handle.remove()
+            except Exception:
+                pass
+        def fwd_hook(module, inp, out):
+            self._gc_activations = out
+        self._gc_forward_handle = target_module.register_forward_hook(fwd_hook)
+
+    def generate_gradcam(self, image: torch.Tensor, target_class: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+        was_training = self.classifier_model.training
+        self.classifier_model.eval()
+        if image.dim() == 3:
+            image = image.unsqueeze(0)
+        image = image.to(self.device)
+        for p in self.classifier_model.parameters():
+            p.requires_grad_(True)
+        self.classifier_model.zero_grad(set_to_none=True)
+        self._gc_activations = None
+        logits = self.classifier_model(image)['logits']
+        if target_class is None:
+            target_class = int(torch.argmax(logits, dim=1).item())
+        score = logits[:, target_class].sum()
+        gradients = None
+        activations = self._gc_activations
+        if activations is not None and isinstance(activations, torch.Tensor):
+            try:
+                gradients = torch.autograd.grad(score, activations, retain_graph=True, allow_unused=True)[0]
+            except Exception:
+                gradients = None
+        if gradients is None or activations is None:
+            logits = self.classifier_model(image)['logits']
+            score = logits[:, target_class].sum()
+            if self._gc_activations is not None and isinstance(self._gc_activations, torch.Tensor):
+                self._gc_activations.retain_grad()
+                score.backward(retain_graph=True)
+                gradients = self._gc_activations.grad
+                activations = self._gc_activations
+        if activations is None or gradients is None:
+            _, _, H, W = image.shape
+            heatmap_uint8 = np.zeros((W, H), dtype=np.uint8)
+            img = image.squeeze(0).detach().cpu().numpy()
+            if img.shape[0] == 3:
+                img = np.transpose(img, (1,2,0))
+            img_vis = (img * 255.0).clip(0,255).astype(np.uint8) if img.max() <= 1.0 + 1e-3 else img.clip(0,255).astype(np.uint8)
+            overlay_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.5, cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET), 0.5, 0)
+            overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
+            if was_training:
+                self.classifier_model.train()
+            return heatmap_uint8, overlay_rgb
+        activations = activations.detach()
+        gradients = gradients.detach()
+        weights = gradients.mean(dim=(2,3), keepdim=True)
+        cam = (weights * activations).sum(dim=1, keepdim=True)
+        cam = torch.relu(cam)
+        cam_min = cam.amin(dim=(2,3), keepdim=True)
+        cam_max = cam.amax(dim=(2,3), keepdim=True)
+        if torch.all((cam_max - cam_min) < 1e-6):
+            cam = torch.relu((gradients * activations).sum(dim=1, keepdim=True))
+            cam_min = cam.amin(dim=(2,3), keepdim=True)
+            cam_max = cam.amax(dim=(2,3), keepdim=True)
+        cam_norm = (cam - cam_min) / (cam_max - cam_min + 1e-8)
+        cam_np = cam_norm.squeeze().cpu().numpy()
+        _, _, H, W = image.shape
+        heatmap = cv2.resize(cam_np, (W, H))
+        ks = int(self.gradcam_blur_ksize) if self.gradcam_blur_ksize else 0
+        if ks > 0:
+            if ks % 2 == 0:
+                ks += 1
+            heatmap = cv2.GaussianBlur(heatmap, (ks, ks), self.gradcam_blur_sigma if self.gradcam_blur_sigma > 0 else 0)
+            minv, maxv = float(heatmap.min()), float(heatmap.max())
+            if maxv - minv > 1e-8:
+                heatmap = (heatmap - minv) / (maxv - minv)
+        heatmap_uint8 = np.uint8(255 * heatmap)
+        heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+        img = image.squeeze(0).detach().cpu().numpy()
+        if img.shape[0] == 3:
+            img = np.transpose(img, (1,2,0))
+        img_vis = (img * 255.0).clip(0,255).astype(np.uint8) if img.max() <= 1.0 + 1e-3 else img.clip(0,255).astype(np.uint8)
+        overlay_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.5, heatmap_color, 0.5, 0)
+        overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
+        if was_training:
+            self.classifier_model.train()
+        return heatmap_uint8, overlay_rgb
     
     def analyze_image(
         self, 
@@ -326,6 +651,18 @@ class TwoStageNucleiPipeline:
         print(f"\n🚀 Starting Two-Stage Nuclei Analysis")
         print(f"📁 Input image: {image_path}")
         print("="*60)
+        
+        # Reset explainability accumulators
+        self._shap_summaries = []
+        self._explain_quality_records = []
+        
+        # Prepare output dir for explanations if saving
+        if save_results:
+            if output_dir is None:
+                output_dir = f"pipeline_results_{Path(image_path).stem}"
+            self._current_output_dir = Path(output_dir)
+        else:
+            self._current_output_dir = None
         
         # Load image
         image = cv2.imread(image_path)
@@ -377,10 +714,32 @@ class TwoStageNucleiPipeline:
         
         # Save results if requested
         if save_results:
-            if output_dir is None:
-                output_dir = f"pipeline_results_{Path(image_path).stem}"
-            
             self.save_results(results, output_dir, image)
+            # Save SHAP text summary if any
+            if self.enable_shap and len(self._shap_summaries) > 0:
+                shap_path = Path(output_dir) / 'shap_text_summary.json'
+                with open(shap_path, 'w') as f:
+                    json.dump(self._shap_summaries, f, indent=2)
+            # Save explanation quality metrics
+            if len(self._explain_quality_records) > 0:
+                quality_path = Path(output_dir) / 'explanations_quality.json'
+                with open(quality_path, 'w') as f:
+                    json.dump(self._explain_quality_records, f, indent=2)
+            # Print brief summary
+            try:
+                gcm_vals = [q.get('gradcam_center_mass') for q in self._explain_quality_records if isinstance(q.get('gradcam_center_mass'), (float, int))]
+                scm_vals = [q.get('shap_center_mass') for q in self._explain_quality_records if isinstance(q.get('shap_center_mass'), (float, int))]
+                corr_vals = [q.get('shap_gradcam_corr') for q in self._explain_quality_records if isinstance(q.get('shap_gradcam_corr'), (float, int))]
+                explanations_dir = Path(output_dir) / 'explanations'
+                print(f"🖼️  Saved per-nucleus Grad-CAM/SHAP overlays → {explanations_dir}")
+                if gcm_vals:
+                    print(f"📊 Grad-CAM center-mass avg: {float(np.mean(gcm_vals)):.3f}")
+                if scm_vals:
+                    print(f"📊 SHAP center-mass avg: {float(np.mean(scm_vals)):.3f}")
+                if corr_vals:
+                    print(f"📊 SHAP–GradCAM correlation avg: {float(np.mean(corr_vals)):.3f}")
+            except Exception:
+                pass
         
         # Visualize results if requested
         if visualize:
@@ -414,6 +773,20 @@ class TwoStageNucleiPipeline:
         print(f"\n🚀 Starting Two-Stage Nuclei Analysis on Image Array")
         print(f"📸 Image shape: {image.shape}")
         print("="*60)
+        
+        # Reset explainability accumulators
+        self._shap_summaries = []
+        self._explain_quality_records = []
+        
+        # Prepare output dir for explanations if saving
+        if save_results:
+            if output_dir is None:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_dir = f"pipeline_results_{timestamp}"
+            self._current_output_dir = Path(output_dir)
+        else:
+            self._current_output_dir = None
         
         # Ensure image is in correct format
         if image.dtype != np.uint8:
@@ -501,12 +874,32 @@ class TwoStageNucleiPipeline:
         
         # Save results if requested
         if save_results:
-            if output_dir is None:
-                from datetime import datetime
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_dir = f"pipeline_results_{timestamp}"
-            
             self.save_results(results, output_dir, image)
+            # Save SHAP text summary if any
+            if self.enable_shap and len(self._shap_summaries) > 0:
+                shap_path = Path(output_dir) / 'shap_text_summary.json'
+                with open(shap_path, 'w') as f:
+                    json.dump(self._shap_summaries, f, indent=2)
+            # Save explanation quality metrics
+            if len(self._explain_quality_records) > 0:
+                quality_path = Path(output_dir) / 'explanations_quality.json'
+                with open(quality_path, 'w') as f:
+                    json.dump(self._explain_quality_records, f, indent=2)
+            # Print brief summary
+            try:
+                gcm_vals = [q.get('gradcam_center_mass') for q in self._explain_quality_records if isinstance(q.get('gradcam_center_mass'), (float, int))]
+                scm_vals = [q.get('shap_center_mass') for q in self._explain_quality_records if isinstance(q.get('shap_center_mass'), (float, int))]
+                corr_vals = [q.get('shap_gradcam_corr') for q in self._explain_quality_records if isinstance(q.get('shap_gradcam_corr'), (float, int))]
+                explanations_dir = Path(output_dir) / 'explanations'
+                print(f"🖼️  Saved per-nucleus Grad-CAM/SHAP overlays → {explanations_dir}")
+                if gcm_vals:
+                    print(f"📊 Grad-CAM center-mass avg: {float(np.mean(gcm_vals)):.3f}")
+                if scm_vals:
+                    print(f"📊 SHAP center-mass avg: {float(np.mean(scm_vals)):.3f}")
+                if corr_vals:
+                    print(f"📊 SHAP–GradCAM correlation avg: {float(np.mean(corr_vals)):.3f}")
+            except Exception:
+                pass
         
         # Visualize results if requested
         if visualize:

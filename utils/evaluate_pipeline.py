@@ -28,6 +28,11 @@ import json
 from typing import Dict, List, Tuple
 import warnings
 warnings.filterwarnings('ignore')
+try:
+    import shap
+    HAS_SHAP = True
+except Exception:
+    HAS_SHAP = False
 
 # Import project modules
 from two_stage_pipeline import TwoStageNucleiPipeline, find_best_models
@@ -435,7 +440,14 @@ def main():
     pipeline = TwoStageNucleiPipeline(
         segmentation_model_path=args.segmentation_model,
         classifier_model_path=args.classifier_model,
-        device=args.device
+        device=args.device,
+        enable_gradcam=True,
+        enable_shap=HAS_SHAP,
+        gradcam_layer_idx=-2,
+        gradcam_blur_ksize=5,
+        gradcam_blur_sigma=1.0,
+        shap_bg=8,
+        shap_nsamples=20
     )
     
     # Save original image

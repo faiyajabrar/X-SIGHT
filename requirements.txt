@@ -39,3 +39,6 @@ timm>=0.9.0
 sam-pytorch
 
 # JSON handling (built-in with Python 3.7+) 
+ 
+# Explainability
+shap>=0.44.0

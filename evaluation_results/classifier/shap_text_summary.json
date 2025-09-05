@@ -1,0 +1,98 @@
+[
+  {
+    "sample_idx": 277,
+    "true_label": 2,
+    "true_class": "Connective",
+    "pred_label": 0,
+    "pred_class": "Neoplastic",
+    "confidence": 0.2538202106952667,
+    "mean_positive_contribution": 8.359011325798843e-05,
+    "mean_negative_contribution": -8.324363517964334e-05,
+    "mean_abs_contribution": 8.330051404185558e-05,
+    "explained_class": 0
+  },
+  {
+    "sample_idx": 13735,
+    "true_label": 1,
+    "true_class": "Inflammatory",
+    "pred_label": 1,
+    "pred_class": "Inflammatory",
+    "confidence": 0.37241509556770325,
+    "mean_positive_contribution": 0.00022923370450664515,
+    "mean_negative_contribution": -0.0002272747140701799,
+    "mean_abs_contribution": 0.0002268214665134115,
+    "explained_class": 1
+  },
+  {
+    "sample_idx": 15832,
+    "true_label": 0,
+    "true_class": "Neoplastic",
+    "pred_label": 0,
+    "pred_class": "Neoplastic",
+    "confidence": 0.26531583070755005,
+    "mean_positive_contribution": 0.0001363988357855316,
+    "mean_negative_contribution": -0.0001358620584869496,
+    "mean_abs_contribution": 0.00013527604573388037,
+    "explained_class": 0
+  },
+  {
+    "sample_idx": 17497,
+    "true_label": 1,
+    "true_class": "Inflammatory",
+    "pred_label": 4,
+    "pred_class": "Epithelial",
+    "confidence": 0.4914137125015259,
+    "mean_positive_contribution": 0.00045110999410994724,
+    "mean_negative_contribution": -0.00045077307707952263,
+    "mean_abs_contribution": 0.00044867674211337017,
+    "explained_class": 4
+  },
+  {
+    "sample_idx": 23785,
+    "true_label": 4,
+    "true_class": "Epithelial",
+    "pred_label": 4,
+    "pred_class": "Epithelial",
+    "confidence": 0.46183106303215027,
+    "mean_positive_contribution": 0.0005380435869115018,
+    "mean_negative_contribution": -0.0005327261553144175,
+    "mean_abs_contribution": 0.0005320259499743108,
+    "explained_class": 4
+  },
+  {
+    "sample_idx": 26830,
+    "true_label": 2,
+    "true_class": "Connective",
+    "pred_label": 2,
+    "pred_class": "Connective",
+    "confidence": 0.2906346917152405,
+    "mean_positive_contribution": 0.0001425830543465218,
+    "mean_negative_contribution": -0.00014055551351254547,
+    "mean_abs_contribution": 0.00014067362273699263,
+    "explained_class": 2
+  },
+  {
+    "sample_idx": 32674,
+    "true_label": 4,
+    "true_class": "Epithelial",
+    "pred_label": 4,
+    "pred_class": "Epithelial",
+    "confidence": 0.4780873656272888,
+    "mean_positive_contribution": 0.00010044835671343942,
+    "mean_negative_contribution": -0.0001003632392870782,
+    "mean_abs_contribution": 9.977543057509454e-05,
+    "explained_class": 4
+  },
+  {
+    "sample_idx": 33797,
+    "true_label": 1,
+    "true_class": "Inflammatory",
+    "pred_label": 2,
+    "pred_class": "Connective",
+    "confidence": 0.2740318179130554,
+    "mean_positive_contribution": 0.00015621872615332845,
+    "mean_negative_contribution": -0.00015578923587924006,
+    "mean_abs_contribution": 0.00015588008637989283,
+    "explained_class": 2
+  }
+]
