@@ -1134,7 +1134,7 @@ def find_best_models():
     
     # Find best segmentation model
     seg_paths = [
-        'lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=12-val_dice=0.656.ckpt',
+        'lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=112-val_dice=0.656.ckpt',
     ]
     
     # Search for any segmentation checkpoints
@@ -1151,7 +1151,7 @@ def find_best_models():
     
     # Find best classifier model  
     clf_paths = [
-        'lightning_logs/classifier/classifier_efficientnet_b3_20250724_002315/version_0/checkpoints/classifier-epoch=04-val_f1=0.789.ckpt',
+        'lightning_logs/classifier/classifier_efficientnet_b3_20250727_002713/version_0/checkpoints/classifier-epoch=19-val_f1=0.806.ckpt',
     ]
     
     # Search for any classifier checkpoints
@@ -1174,7 +1174,7 @@ def main():
     
     # Model paths (with auto-detection of best models)
     parser.add_argument('--segmentation_model', type=str, 
-                       default='lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=12-val_dice=0.656.ckpt',
+                       default='lightning_logs/segmentation/version_1/checkpoints/advanced-epoch=112-val_dice=0.656.ckpt',
                        help='Path to trained segmentation model checkpoint')
     parser.add_argument('--classifier_model', type=str,
                        default='lightning_logs/classifier/classifier_efficientnet_b3_20250727_002713/version_0/checkpoints/classifier-epoch=19-val_f1=0.806.ckpt',

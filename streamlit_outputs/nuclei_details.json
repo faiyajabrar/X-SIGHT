@@ -1,0 +1,380 @@
+[
+  {
+    "instance_id": 0,
+    "class_id": 1,
+    "class_name": "Neoplastic",
+    "confidence": 0.24433349072933197,
+    "area": 2696.0,
+    "bbox": [
+      112,
+      0,
+      241,
+      108
+    ],
+    "centroid": [
+      176.7496290801187,
+      40.58939169139466
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.24433349072933197,
+      0.17434267699718475,
+      0.1573547124862671,
+      0.20027324557304382,
+      0.22369585931301117
+    ]
+  },
+  {
+    "instance_id": 1,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.25933945178985596,
+    "area": 252.0,
+    "bbox": [
+      196,
+      61,
+      256,
+      142
+    ],
+    "centroid": [
+      238.4126984126984,
+      100.77380952380952
+    ],
+    "segmentation_class_id": 1,
+    "segmentation_class_name": "Neoplastic",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.21864774823188782,
+      0.14464668929576874,
+      0.25933945178985596,
+      0.17532315850257874,
+      0.20204292237758636
+    ]
+  },
+  {
+    "instance_id": 2,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.3760469853878021,
+    "area": 266.0,
+    "bbox": [
+      0,
+      156,
+      78,
+      239
+    ],
+    "centroid": [
+      36.3984962406015,
+      196.6315789473684
+    ],
+    "segmentation_class_id": 2,
+    "segmentation_class_name": "Inflammatory",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.14330227673053741,
+      0.3760469853878021,
+      0.21555174887180328,
+      0.12613545358181,
+      0.13896359503269196
+    ]
+  },
+  {
+    "instance_id": 3,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.4017922878265381,
+    "area": 232.0,
+    "bbox": [
+      65,
+      167,
+      148,
+      248
+    ],
+    "centroid": [
+      106.13793103448276,
+      206.03879310344828
+    ],
+    "segmentation_class_id": 2,
+    "segmentation_class_name": "Inflammatory",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.14154258370399475,
+      0.4017922878265381,
+      0.20295199751853943,
+      0.1247187927365303,
+      0.12899433076381683
+    ]
+  },
+  {
+    "instance_id": 4,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.31557366251945496,
+    "area": 280.0,
+    "bbox": [
+      83,
+      192,
+      172,
+      256
+    ],
+    "centroid": [
+      126.76428571428572,
+      230.37857142857143
+    ],
+    "segmentation_class_id": 2,
+    "segmentation_class_name": "Inflammatory",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.16206292808055878,
+      0.31557366251945496,
+      0.24852114915847778,
+      0.12774094939231873,
+      0.14610129594802856
+    ]
+  },
+  {
+    "instance_id": 5,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.3133748173713684,
+    "area": 289.0,
+    "bbox": [
+      96,
+      130,
+      183,
+      209
+    ],
+    "centroid": [
+      138.98961937716263,
+      168.7923875432526
+    ],
+    "segmentation_class_id": 2,
+    "segmentation_class_name": "Inflammatory",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.15036602318286896,
+      0.3133748173713684,
+      0.2587950825691223,
+      0.13259254395961761,
+      0.1448715329170227
+    ]
+  },
+  {
+    "instance_id": 6,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.31396064162254333,
+    "area": 572.0,
+    "bbox": [
+      154,
+      187,
+      253,
+      256
+    ],
+    "centroid": [
+      201.92132867132867,
+      232.92482517482517
+    ],
+    "segmentation_class_id": 2,
+    "segmentation_class_name": "Inflammatory",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.16488927602767944,
+      0.31396064162254333,
+      0.23530656099319458,
+      0.1311616450548172,
+      0.15468187630176544
+    ]
+  },
+  {
+    "instance_id": 7,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.42355644702911377,
+    "area": 438.0,
+    "bbox": [
+      0,
+      169,
+      58,
+      256
+    ],
+    "centroid": [
+      10.557077625570777,
+      210.4703196347032
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.1379425972700119,
+      0.42355644702911377,
+      0.17649196088314056,
+      0.13025784492492676,
+      0.13175120949745178
+    ]
+  },
+  {
+    "instance_id": 8,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.396626740694046,
+    "area": 387.0,
+    "bbox": [
+      0,
+      197,
+      72,
+      256
+    ],
+    "centroid": [
+      27.82687338501292,
+      241.32041343669252
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.1430082768201828,
+      0.396626740694046,
+      0.19573664665222168,
+      0.12489335983991623,
+      0.13973498344421387
+    ]
+  },
+  {
+    "instance_id": 9,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.4131888449192047,
+    "area": 63.0,
+    "bbox": [
+      0,
+      166,
+      71,
+      243
+    ],
+    "centroid": [
+      31.571428571428573,
+      205.79365079365078
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.14083991944789886,
+      0.4131888449192047,
+      0.1750410944223404,
+      0.13601775467395782,
+      0.13491244614124298
+    ]
+  },
+  {
+    "instance_id": 10,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.31378307938575745,
+    "area": 307.0,
+    "bbox": [
+      20,
+      58,
+      109,
+      138
+    ],
+    "centroid": [
+      64.3029315960912,
+      97.91205211726384
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.15301154553890228,
+      0.23966625332832336,
+      0.31378307938575745,
+      0.13927221298217773,
+      0.15426687896251678
+    ]
+  },
+  {
+    "instance_id": 11,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.32917699217796326,
+    "area": 467.0,
+    "bbox": [
+      48,
+      25,
+      129,
+      124
+    ],
+    "centroid": [
+      88.78800856531049,
+      74.36616702355461
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.17349226772785187,
+      0.32917699217796326,
+      0.22487735748291016,
+      0.1289484202861786,
+      0.1435050070285797
+    ]
+  },
+  {
+    "instance_id": 12,
+    "class_id": 2,
+    "class_name": "Inflammatory",
+    "confidence": 0.40269744396209717,
+    "area": 105.0,
+    "bbox": [
+      59,
+      168,
+      145,
+      250
+    ],
+    "centroid": [
+      98.07619047619048,
+      208.85714285714286
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": false,
+    "class_probabilities": [
+      0.1414012312889099,
+      0.40269744396209717,
+      0.19676534831523895,
+      0.1319809854030609,
+      0.12715503573417664
+    ]
+  },
+  {
+    "instance_id": 13,
+    "class_id": 3,
+    "class_name": "Connective",
+    "confidence": 0.30999520421028137,
+    "area": 605.0,
+    "bbox": [
+      81,
+      150,
+      184,
+      247
+    ],
+    "centroid": [
+      135.4495867768595,
+      199.4099173553719
+    ],
+    "segmentation_class_id": 3,
+    "segmentation_class_name": "Connective",
+    "stage_agreement": true,
+    "class_probabilities": [
+      0.15115047991275787,
+      0.23104701936244965,
+      0.30999520421028137,
+      0.14884266257286072,
+      0.15896457433700562
+    ]
+  }
+]

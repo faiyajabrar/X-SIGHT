@@ -42,3 +42,6 @@ sam-pytorch
  
 # Explainability
 shap>=0.44.0
+ 
+# App UI
+streamlit>=1.36.0
