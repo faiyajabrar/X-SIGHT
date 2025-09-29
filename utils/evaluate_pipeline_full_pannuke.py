@@ -18,9 +18,10 @@ import platform
 from pathlib import Path
 import argparse
 import json
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 
 import numpy as np
+from sklearn.metrics import classification_report
 import torch
 import cv2
 
@@ -87,11 +88,13 @@ def evaluate_pipeline_full(
     # Init dataset (no transforms; we'll read raw arrays/paths)
     ds = PanNukeDataset(root=dataset_root, augmentations=None, validate_dataset=False, base_size=base_size)
 
-    # Init pipeline
+    # Init pipeline with more permissive parameters
     pipeline = TwoStageNucleiPipeline(
         segmentation_model_path=segmentation_model,
         classifier_model_path=classifier_model,
         device=device,
+        min_nucleus_area=5,  # More permissive area filtering
+        max_nucleus_area=8000,  # Increased max area
         enable_gradcam=False,
         enable_shap=False
     )
@@ -102,6 +105,8 @@ def evaluate_pipeline_full(
     conf_total = np.zeros((num_classes, num_classes), dtype=np.int64)
     nuclei_total = 0
     predicted_nuclei_counts = {name: 0 for name in class_names[1:]}
+    per_instance_true: List[int] = []  # labels 1..5
+    per_instance_pred: List[int] = []  # labels 1..5
 
     # Iterate over all samples, reconstruct raw image and GT mask
     for idx in range(len(ds)):
@@ -138,8 +143,107 @@ def evaluate_pipeline_full(
         extracted_nuclei = results['extracted_nuclei']
         classifications = results['classifications']
 
-        # Compose final pipeline type mask from classifications (circles at centroids)
-        pipeline_type_mask = _build_pipeline_type_mask(seg_pred.shape, extracted_nuclei, classifications)
+        # Start from segmentation prediction, then refine with classifier labels inside nucleus regions
+        pipeline_type_mask = seg_pred.copy()
+
+        H, W = seg_pred.shape
+        
+        # Improved region mapping: Use watershed-like approach to assign classification results
+        # Create a distance transform to better handle overlapping regions
+        from scipy import ndimage
+        
+        # Precompute connected components per class for better region extraction
+        cc_by_class = {}
+        for cls in range(1, num_classes):
+            cls_mask = (seg_pred == cls).astype(np.uint8)
+            if cls_mask.any():
+                num_cc, cc_labels = cv2.connectedComponents(cls_mask)
+                # Store both labels and distance transform for this class
+                if num_cc > 1:  # If there are components
+                    dist_transform = ndimage.distance_transform_edt(cls_mask)
+                else:
+                    dist_transform = None
+            else:
+                num_cc, cc_labels, dist_transform = 0, None, None
+            cc_by_class[cls] = (num_cc, cc_labels, dist_transform)
+
+        # Apply classifications with improved region mapping
+        for nucleus in extracted_nuclei:
+            nid = nucleus['nucleus_id']
+            if nid not in classifications:
+                continue
+            pred0 = int(classifications[nid]['predicted_class'])
+            pred1 = pred0 + 1
+            centroid = nucleus.get('centroid', (H // 2, W // 2))
+            cy, cx = int(centroid[0]), int(centroid[1])
+            cy = max(0, min(H - 1, cy))
+            cx = max(0, min(W - 1, cx))
+
+            region_mask = None
+            
+            # 1) Try to use explicit mask from nucleus extraction if available
+            m = nucleus.get('mask_patch', None)
+            if isinstance(m, np.ndarray) and m.ndim == 2:
+                # Scale mask to match image size if needed
+                if m.shape != (H, W):
+                    bbox = nucleus.get('bbox', (0, 0, H, W))
+                    y1, x1, y2, x2 = bbox
+                    region_mask = np.zeros((H, W), dtype=bool)
+                    # Resize mask to bbox size
+                    bbox_h, bbox_w = y2 - y1, x2 - x1
+                    if bbox_h > 0 and bbox_w > 0 and m.shape[0] > 0 and m.shape[1] > 0:
+                        try:
+                            mask_resized = cv2.resize(m.astype(np.uint8), (bbox_w, bbox_h), interpolation=cv2.INTER_NEAREST)
+                            region_mask[y1:y2, x1:x2] = mask_resized.astype(bool)
+                        except:
+                            region_mask = None
+                else:
+                    region_mask = m.astype(bool)
+            
+            # 2) Fallback: Find the connected component that contains the centroid
+            if region_mask is None:
+                # Find the original segmentation class at centroid
+                seed_cls = int(seg_pred[cy, cx])
+                if seed_cls > 0 and cc_by_class[seed_cls][1] is not None:
+                    num_cc, cc_labels, dist_transform = cc_by_class[seed_cls]
+                    cc_id = int(cc_labels[cy, cx])
+                    if cc_id > 0:
+                        # Use the connected component
+                        region_mask = (cc_labels == cc_id)
+                        
+                        # Expand region slightly using distance transform if available
+                        if dist_transform is not None:
+                            area = int(nucleus.get('area', 100))
+                            # Adaptive expansion based on nucleus size
+                            expansion_radius = min(3, max(1, int(np.sqrt(area / np.pi) * 0.2)))
+                            expanded_mask = dist_transform > 0
+                            expanded_mask = ndimage.binary_dilation(expanded_mask, iterations=expansion_radius)
+                            # Intersect with original class region to avoid overflow
+                            region_mask = np.logical_and(expanded_mask, seg_pred == seed_cls)
+            
+            # 3) Final fallback: adaptive circle based on predicted area
+            if region_mask is None:
+                area = int(nucleus.get('area', 100))
+                rad = max(2, int(np.sqrt(max(1, area) / np.pi) * 1.1))  # Slightly larger circle
+                y, x = np.ogrid[:H, :W]
+                circle = (x - cx) ** 2 + (y - cy) ** 2 <= rad ** 2
+                # Intersect with any foreground segmentation to avoid background
+                region_mask = np.logical_and(circle, seg_pred > 0)
+                # If no intersection with foreground, use the circle anyway (classification is confident)
+                if not region_mask.any():
+                    region_mask = circle
+            
+            if region_mask is None or not region_mask.any():
+                continue
+                
+            # Apply classification to the region
+            pipeline_type_mask[region_mask] = pred1
+
+            # Per-instance metrics from centroid label
+            gt_at_centroid = int(gt_type_mask[cy, cx])
+            if gt_at_centroid > 0:
+                per_instance_true.append(gt_at_centroid)
+                per_instance_pred.append(pred1)
 
         # Accumulate confusion counts
         tp, fp, fn = _compute_counts_from_masks(gt_type_mask, pipeline_type_mask, num_classes=num_classes)
@@ -199,11 +303,41 @@ def evaluate_pipeline_full(
         'confusion_matrix': conf_total.astype(int).tolist(),
         'nuclei_detected_total': int(nuclei_total),
         'predicted_nuclei_class_counts': predicted_nuclei_counts,
+        'per_instance': {},
         'models': {
             'segmentation': segmentation_model,
             'classifier': classifier_model
         }
     }
+
+    # Per-instance classification metrics (based on centroid labels)
+    if len(per_instance_true) > 0:
+        y_true = np.array(per_instance_true) - 1  # map 1..5 -> 0..4
+        y_pred = np.array(per_instance_pred) - 1
+        class_names_no_bg = class_names[1:]
+        report = classification_report(
+            y_true, y_pred,
+            labels=list(range(len(class_names_no_bg))),
+            target_names=class_names_no_bg,
+            output_dict=True,
+            zero_division=0
+        )
+        results['per_instance'] = {
+            'count': int(len(per_instance_true)),
+            'accuracy': float((y_true == y_pred).mean()),
+            'weighted_f1': float(report['weighted avg']['f1-score']),
+            'macro_f1': float(report['macro avg']['f1-score']),
+            'weighted_precision': float(report['weighted avg']['precision']),
+            'weighted_recall': float(report['weighted avg']['recall']),
+            'per_class': {
+                name: {
+                    'precision': float(report[name]['precision']),
+                    'recall': float(report[name]['recall']),
+                    'f1': float(report[name]['f1-score']),
+                    'support': int(report[name]['support'])
+                } for name in class_names_no_bg
+            }
+        }
 
     if output_json:
         out_path = Path(output_json)
@@ -223,6 +357,15 @@ def evaluate_pipeline_full(
         m = per_class[name]
         print(f"{name:12s} | sup={m['support']:7d} | P={m['precision']:.4f} | R={m['recall']:.4f} | F1={m['f1']:.4f} | Dice={m['dice']:.4f} | IoU={m['iou']:.4f}")
     print("=" * 60)
+
+    if results['per_instance']:
+        pi = results['per_instance']
+        print("Per-Instance Classification (by centroid label)")
+        print("-" * 60)
+        print(f"Instances: {pi['count']} | Acc: {pi['accuracy']:.4f} | F1(w): {pi['weighted_f1']:.4f} | F1(m): {pi['macro_f1']:.4f}")
+        for name, m in pi['per_class'].items():
+            print(f"{name:12s} | sup={m['support']:7d} | P={m['precision']:.4f} | R={m['recall']:.4f} | F1={m['f1']:.4f}")
+        print("=" * 60)
 
     return results
 

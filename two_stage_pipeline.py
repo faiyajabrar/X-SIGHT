@@ -107,8 +107,8 @@ class TwoStageNucleiPipeline:
             [255, 0, 255],    # 5: Epithelial - magenta
         ], dtype=np.uint8)
         
-        print(f"🎯 Initializing Two-Stage Nuclei Pipeline on device: {self.device}")
-        print(f"🧬 Classification: {len(self.classification_classes)} nucleus types (Background excluded)")
+        print(f"[INFO] Initializing Two-Stage Nuclei Pipeline on device: {self.device}")
+        print(f"[INFO] Classification: {len(self.classification_classes)} nucleus types (Background excluded)")
         print(f"   Classes: {', '.join(self.classification_classes)}")
         
         # Load models
@@ -128,11 +128,11 @@ class TwoStageNucleiPipeline:
         self._shap_summaries: List[Dict] = []
         self._explain_quality_records: List[Dict] = []
         
-        print("✅ Two-Stage Pipeline initialized successfully!")
+        print("[INFO] Two-Stage Pipeline initialized successfully!")
     
     def load_segmentation_model(self, model_path: str):
         """Load the segmentation model (Stage 1)."""
-        print(f"📁 Loading segmentation model from: {model_path}")
+        print(f"[INFO] Loading segmentation model from: {model_path}")
         
         # Load the trained Attention U-Net model
         self.segmentation_model = AdvancedAttentionModel.load_from_checkpoint(
@@ -143,11 +143,11 @@ class TwoStageNucleiPipeline:
         self.segmentation_model = self.segmentation_model.to(self.device)
         self.segmentation_model.eval()
         
-        print("✅ Segmentation model loaded successfully!")
+        print("[INFO] Segmentation model loaded successfully!")
     
     def load_classifier_model(self, model_path: str):
         """Load the state-of-the-art nucleus classifier model (Stage 2)."""
-        print(f"📁 Loading classifier model from: {model_path}")
+        print(f"[INFO] Loading classifier model from: {model_path}")
         
         # Load the trained state-of-the-art nucleus classifier
         # This loads the Lightning checkpoint and extracts the actual model
@@ -165,15 +165,15 @@ class TwoStageNucleiPipeline:
         expected_classes = len(self.classification_classes)
         if hasattr(lightning_model, 'num_classes'):
             assert lightning_model.num_classes == expected_classes, f"Classifier should have {expected_classes} classes, got {lightning_model.num_classes}"
-            print(f"✅ Verified: Classifier configured for {lightning_model.num_classes} classes (excluding background)")
+            print(f"[INFO] Verified: Classifier configured for {lightning_model.num_classes} classes (excluding background)")
             print(f"   Classification classes: {', '.join(self.classification_classes)}")
         
-        print("✅ classifier model loaded successfully!")
+        print("[INFO] classifier model loaded successfully!")
         # Try to load training_state.json path hint if present
         try:
             ts_path = Path('lightning_logs/classifier/training_state.json')
             if ts_path.exists():
-                print(f"ℹ️  Training state file found: {ts_path}")
+                print(f"[INFO] Training state file found: {ts_path}")
         except Exception:
             pass
         
@@ -233,7 +233,7 @@ class TwoStageNucleiPipeline:
         Returns:
             Tuple of (logits, prediction_mask)
         """
-        print("🔍 Stage 1: Running segmentation...")
+        print("[INFO] Stage 1: Running segmentation...")
         
         # Preprocess image
         image_tensor = self.preprocess_image_for_segmentation(image)
@@ -245,7 +245,7 @@ class TwoStageNucleiPipeline:
             # Get prediction mask
             prediction_mask = torch.argmax(logits, dim=1).squeeze(0)  # [H, W]
         
-        print(f"✅ Segmentation complete. Detected classes: {torch.unique(prediction_mask).cpu().numpy()}")
+        print(f"[INFO] Segmentation complete. Detected classes: {torch.unique(prediction_mask).cpu().numpy()}")
         
         return logits.squeeze(0), prediction_mask
     
@@ -264,7 +264,7 @@ class TwoStageNucleiPipeline:
         Returns:
             List of extracted nucleus instances
         """
-        print("✂️  Extracting individual nucleus instances...")
+        print("[INFO] Extracting individual nucleus instances...")
         
         # Resize image to match segmentation output if needed
         seg_height, seg_width = segmentation_logits.shape[-2:]
@@ -286,7 +286,7 @@ class TwoStageNucleiPipeline:
             target_size=224
         )
         
-        print(f"✅ Extracted {len(nuclei_instances)} nucleus instances")
+        print(f"[INFO] Extracted {len(nuclei_instances)} nucleus instances")
         return nuclei_instances
     
     def classify_nuclei(self, nuclei_instances: List[Dict]) -> List[Dict]:
@@ -834,13 +834,20 @@ class TwoStageNucleiPipeline:
         for i, nucleus in enumerate(classified_nuclei):
             nucleus_id = nucleus['instance_id']
             
-            # Create extracted nuclei info
+            # Create extracted nuclei info with better mask handling
+            nucleus_mask = nucleus.get('mask', np.zeros(original_size, dtype=bool))
+            # Ensure mask is properly sized
+            if isinstance(nucleus_mask, np.ndarray) and nucleus_mask.shape != original_size:
+                nucleus_mask = np.zeros(original_size, dtype=bool)
+            
             extracted_nuclei.append({
                 'nucleus_id': nucleus_id,
-                'mask': nucleus.get('mask', np.zeros(original_size, dtype=bool)),
+                'mask': nucleus_mask,
+                'mask_patch': nucleus.get('mask_patch', None),  # Keep the patch-level mask too
                 'contour': nucleus.get('contour', []),
                 'area': nucleus['area'],
                 'centroid': nucleus['centroid'],
+                'bbox': nucleus.get('bbox', (0, 0, original_size[0], original_size[1])),
                 'patch': nucleus.get('patch', np.zeros((224, 224, 3), dtype=np.uint8))
             })
             

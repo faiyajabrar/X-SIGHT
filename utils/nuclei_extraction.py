@@ -10,10 +10,11 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
+import warnings
 from typing import List, Tuple, Dict, Optional
 from skimage import measure, morphology
 from skimage.segmentation import clear_border
-import warnings
+
 warnings.filterwarnings('ignore')
 
 
@@ -208,9 +209,9 @@ def extract_nuclei_from_prediction(
         if class_mask.sum() == 0:
             continue
             
-        # Apply minimal morphological operations for predictions
-        class_mask = morphology.remove_small_holes(class_mask.astype(bool), area_threshold=16)
-        class_mask = morphology.remove_small_objects(class_mask, min_size=min_area // 2)  # Very conservative
+        # Apply even more minimal morphological operations for predictions
+        class_mask = morphology.remove_small_holes(class_mask.astype(bool), area_threshold=4)  # More conservative hole filling
+        class_mask = morphology.remove_small_objects(class_mask, min_size=max(1, min_area // 4))  # Even more conservative
         class_mask = class_mask.astype(np.uint8)
         
         # Find connected components
@@ -263,10 +264,12 @@ def extract_nuclei_from_prediction(
             final_image[start_y:start_y+new_h, start_x:start_x+new_w] = image_resized
             final_mask[start_y:start_y+new_h, start_x:start_x+new_w] = mask_resized
             
-            # Store nucleus instance
+            # Store nucleus instance with better mask information
             nucleus_info = {
                 'patch': final_image,
                 'mask_patch': final_mask,
+                'mask': (labeled_mask == region.label),  # Full-resolution binary mask
+                'contour': region.coords.tolist() if hasattr(region, 'coords') else [],  # Store contour points
                 'class_id': class_id,
                 'class_name': class_names[class_id],
                 'bbox': (y1_pad, x1_pad, y2_pad, x2_pad),
