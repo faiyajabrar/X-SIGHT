@@ -500,6 +500,129 @@ class TwoStageNucleiPipeline:
         
         print("✅ Classification complete!")
         return nuclei_instances
+    
+    def create_fused_prediction_mask(
+        self,
+        segmentation_mask: np.ndarray,
+        nuclei_instances: List[Dict],
+        confidence_threshold: float = 0.6
+    ) -> np.ndarray:
+        """
+        Create final prediction mask using confidence-based fusion of segmentation and classification.
+        
+        This implements the same fusion strategy as the evaluation script for consistency.
+        
+        Args:
+            segmentation_mask: Segmentation model prediction [H, W]
+            nuclei_instances: List of classified nucleus instances
+            confidence_threshold: Minimum confidence to override segmentation (default: 0.6)
+            
+        Returns:
+            Fused prediction mask [H, W] with class IDs 0-5
+        """
+        from scipy import ndimage
+        
+        # Start with segmentation as base
+        fused_mask = segmentation_mask.copy()
+        H, W = segmentation_mask.shape
+        num_classes = 6  # Background + 5 nucleus types
+        
+        # Precompute connected components per class
+        cc_by_class = {}
+        for cls in range(1, num_classes):
+            cls_mask = (segmentation_mask == cls).astype(np.uint8)
+            if cls_mask.any():
+                num_cc, cc_labels = cv2.connectedComponents(cls_mask)
+                if num_cc > 1:
+                    dist_transform = ndimage.distance_transform_edt(cls_mask)
+                else:
+                    dist_transform = None
+            else:
+                num_cc, cc_labels, dist_transform = 0, None, None
+            cc_by_class[cls] = (num_cc, cc_labels, dist_transform)
+        
+        # Apply classifications with confidence-based fusion
+        for nucleus in nuclei_instances:
+            pred_class_id = nucleus['class_id']  # 1-5
+            confidence = nucleus.get('confidence', 0.0)
+            seg_class_id = nucleus.get('segmentation_class_id', 0)
+            
+            centroid = nucleus.get('centroid', (H // 2, W // 2))
+            cy, cx = int(centroid[0]), int(centroid[1])
+            cy = max(0, min(H - 1, cy))
+            cx = max(0, min(W - 1, cx))
+            
+            # Get segmentation prediction at centroid
+            seg_at_centroid = int(segmentation_mask[cy, cx])
+            
+            # CONFIDENCE-BASED DECISION:
+            # 1. If agreement, keep as is (no change needed)
+            # 2. If segmentation is background but we detected nucleus, override
+            # 3. If disagreement and high confidence, override
+            # 4. If disagreement and low confidence, keep segmentation
+            
+            should_override = False
+            if seg_at_centroid == pred_class_id:
+                # Already agrees, no change needed
+                should_override = False
+            elif seg_at_centroid == 0:
+                # Segmentation missed this nucleus, add it
+                should_override = True
+            elif confidence >= confidence_threshold:
+                # Confident disagreement, trust classifier
+                should_override = True
+            else:
+                # Low confidence disagreement, keep segmentation
+                should_override = False
+            
+            if not should_override:
+                continue
+            
+            # Find region to override
+            region_mask = None
+            
+            # 1) Try connected component at centroid
+            if seg_at_centroid > 0 and cc_by_class[seg_at_centroid][1] is not None:
+                num_cc, cc_labels, dist_transform = cc_by_class[seg_at_centroid]
+                cc_id = int(cc_labels[cy, cx])
+                if cc_id > 0:
+                    region_mask = (cc_labels == cc_id)
+            
+            # 2) Fallback to explicit mask if available
+            if region_mask is None or not region_mask.any():
+                m = nucleus.get('mask', None)
+                if isinstance(m, np.ndarray) and m.dtype == bool:
+                    if m.shape == (H, W):
+                        region_mask = m
+                    else:
+                        # Try to resize/place mask
+                        bbox = nucleus.get('bbox', None)
+                        if bbox is not None:
+                            y1, x1, y2, x2 = bbox
+                            region_mask = np.zeros((H, W), dtype=bool)
+                            bbox_h, bbox_w = y2 - y1, x2 - x1
+                            if bbox_h > 0 and bbox_w > 0:
+                                try:
+                                    mask_resized = cv2.resize(m.astype(np.uint8), (bbox_w, bbox_h), 
+                                                             interpolation=cv2.INTER_NEAREST)
+                                    region_mask[y1:y2, x1:x2] = mask_resized.astype(bool)
+                                except:
+                                    region_mask = None
+            
+            # 3) Final fallback: conservative circle for high confidence only
+            if (region_mask is None or not region_mask.any()) and confidence >= 0.8:
+                area = int(nucleus.get('area', 100))
+                rad = max(2, int(np.sqrt(max(1, area) / np.pi) * 0.9))
+                y, x = np.ogrid[:H, :W]
+                circle = (x - cx) ** 2 + (y - cy) ** 2 <= rad ** 2
+                region_mask = np.logical_and(circle, segmentation_mask > 0)
+                if not region_mask.any():
+                    region_mask = circle
+            
+            if region_mask is not None and region_mask.any():
+                fused_mask[region_mask] = pred_class_id
+        
+        return fused_mask
 
     # ---------------------- Explainability: Grad-CAM ----------------------
     def _register_gradcam_hooks(self):
@@ -827,6 +950,14 @@ class TwoStageNucleiPipeline:
         # Generate statistics
         stats = self.generate_statistics(classified_nuclei)
         
+        # Create fused prediction mask using confidence-based fusion
+        seg_mask_np = segmentation_mask.cpu().numpy()
+        fused_mask = self.create_fused_prediction_mask(
+            segmentation_mask=seg_mask_np,
+            nuclei_instances=classified_nuclei,
+            confidence_threshold=0.6
+        )
+        
         # Convert to format expected by demo script
         extracted_nuclei = []
         classifications = {}
@@ -866,7 +997,8 @@ class TwoStageNucleiPipeline:
             'nuclei_count': len(classified_nuclei),
             'nuclei_instances': classified_nuclei,
             'statistics': stats,
-            'segmentation_mask': segmentation_mask.cpu().numpy(),
+            'segmentation_mask': seg_mask_np,
+            'fused_prediction_mask': fused_mask,  # Add the confidence-based fused mask
             'segmentation': {
                 'logits': segmentation_logits,
                 'prediction_mask': segmentation_mask,
@@ -877,7 +1009,8 @@ class TwoStageNucleiPipeline:
                 'min_nucleus_area': self.min_nucleus_area,
                 'max_nucleus_area': self.max_nucleus_area,
                 'context_padding': self.context_padding,
-                'device': self.device
+                'device': self.device,
+                'confidence_threshold': 0.6
             }
         }
         
@@ -1014,6 +1147,11 @@ class TwoStageNucleiPipeline:
         seg_mask_colored = self.class_colors[results['segmentation_mask']]
         cv2.imwrite(str(output_path / 'segmentation_mask.png'), cv2.cvtColor(seg_mask_colored, cv2.COLOR_RGB2BGR))
         
+        # Save fused prediction mask if available
+        if 'fused_prediction_mask' in results:
+            fused_mask_colored = self.class_colors[results['fused_prediction_mask']]
+            cv2.imwrite(str(output_path / 'fused_prediction_mask.png'), cv2.cvtColor(fused_mask_colored, cv2.COLOR_RGB2BGR))
+        
         # Save visualization
         self.create_summary_visualization(results, original_image, output_path / 'analysis_summary.png')
         
@@ -1050,23 +1188,29 @@ class TwoStageNucleiPipeline:
         axes[0, 1].set_title('Stage 1: Segmentation', fontweight='bold')
         axes[0, 1].axis('off')
         
-        # Nuclei instances with classifications
-        axes[0, 2].imshow(original_image)
-        for nucleus in nuclei_instances:
-            y1, x1, y2, x2 = nucleus['bbox']
-            color = self.class_colors[nucleus['class_id']] / 255.0
-            
-            # Draw bounding box
-            rect = plt.Rectangle((x1, y1), x2-x1, y2-y1, 
-                               fill=False, edgecolor=color, linewidth=2)
-            axes[0, 2].add_patch(rect)
-            
-            # Add label
-            axes[0, 2].text(x1, y1-5, f"{nucleus['class_name'][:4]}\n{nucleus['confidence']:.2f}",
-                          fontsize=8, color=color, fontweight='bold',
-                          bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.7))
+        # Fused prediction
+        if 'fused_prediction_mask' in results:
+            fused_colored = self.class_colors[results['fused_prediction_mask']]
+            axes[0, 2].imshow(fused_colored)
+            axes[0, 2].set_title('Final: Confidence-Based Fusion', fontweight='bold')
+        else:
+            # Fallback: Show classifications on original image
+            axes[0, 2].imshow(original_image)
+            for nucleus in nuclei_instances:
+                y1, x1, y2, x2 = nucleus['bbox']
+                color = self.class_colors[nucleus['class_id']] / 255.0
+                
+                # Draw bounding box
+                rect = plt.Rectangle((x1, y1), x2-x1, y2-y1, 
+                                   fill=False, edgecolor=color, linewidth=2)
+                axes[0, 2].add_patch(rect)
+                
+                # Add label
+                axes[0, 2].text(x1, y1-5, f"{nucleus['class_name'][:4]}\n{nucleus['confidence']:.2f}",
+                              fontsize=8, color=color, fontweight='bold',
+                              bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.7))
+            axes[0, 2].set_title('Stage 2: Classification Results', fontweight='bold')
         
-        axes[0, 2].set_title('Stage 2: Classification Results', fontweight='bold')
         axes[0, 2].axis('off')
         
         # Class distribution

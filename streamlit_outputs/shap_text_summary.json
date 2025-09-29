@@ -4,125 +4,125 @@
     "predicted_class": 0,
     "predicted_class_name": "Neoplastic",
     "confidence": 0.24433349072933197,
-    "mean_positive_contribution": 0.00013221676679012813,
-    "mean_negative_contribution": -0.000132559595923919,
-    "mean_abs_contribution": 0.0001320074436567747
+    "mean_positive_contribution": 0.00015225241840048068,
+    "mean_negative_contribution": -0.00015243628322950958,
+    "mean_abs_contribution": 0.00015190671422480757
   },
   {
     "nucleus_id": 1,
     "predicted_class": 2,
     "predicted_class_name": "Connective",
     "confidence": 0.25933945178985596,
-    "mean_positive_contribution": 0.00017633094543800784,
-    "mean_negative_contribution": -0.00017628107618025145,
-    "mean_abs_contribution": 0.00017580010906556394
+    "mean_positive_contribution": 0.00013654964215976657,
+    "mean_negative_contribution": -0.00013591647653662386,
+    "mean_abs_contribution": 0.00013584284570913386
   },
   {
     "nucleus_id": 2,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.3760469853878021,
-    "mean_positive_contribution": 0.0003380974968823552,
-    "mean_negative_contribution": -0.00033902875768237594,
-    "mean_abs_contribution": 0.00033759086080485456
+    "mean_positive_contribution": 0.00029139896293037655,
+    "mean_negative_contribution": -0.00029044427100974725,
+    "mean_abs_contribution": 0.0002900861498361854
   },
   {
     "nucleus_id": 3,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.4017922878265381,
-    "mean_positive_contribution": 0.00043670179191791054,
-    "mean_negative_contribution": -0.0004340596928797193,
-    "mean_abs_contribution": 0.0004341306824240228
+    "mean_positive_contribution": 0.0004949974889953645,
+    "mean_negative_contribution": -0.0004937759000083565,
+    "mean_abs_contribution": 0.0004929680499049144
   },
   {
     "nucleus_id": 4,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.31557366251945496,
-    "mean_positive_contribution": 0.00041528740730051463,
-    "mean_negative_contribution": -0.00041963697297184175,
-    "mean_abs_contribution": 0.0004162547541414374
+    "mean_positive_contribution": 0.000413989768246348,
+    "mean_negative_contribution": -0.00041806863812521663,
+    "mean_abs_contribution": 0.00041482350878717334
   },
   {
     "nucleus_id": 5,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.3133748173713684,
-    "mean_positive_contribution": 0.00027712494953364107,
-    "mean_negative_contribution": -0.0002728664725562821,
-    "mean_abs_contribution": 0.0002741915924455084
+    "mean_positive_contribution": 0.0003602774015364814,
+    "mean_negative_contribution": -0.00035835454991601514,
+    "mean_abs_contribution": 0.00035828030462465324
   },
   {
     "nucleus_id": 6,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.31396064162254333,
-    "mean_positive_contribution": 0.0003684209395646023,
-    "mean_negative_contribution": -0.00036777640185885744,
-    "mean_abs_contribution": 0.0003653911024926308
+    "mean_positive_contribution": 0.00028201219641342464,
+    "mean_negative_contribution": -0.0002805519366421664,
+    "mean_abs_contribution": 0.0002792121621040003
   },
   {
     "nucleus_id": 7,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.42355644702911377,
-    "mean_positive_contribution": 0.0003929810498040755,
-    "mean_negative_contribution": -0.00039122991074818725,
-    "mean_abs_contribution": 0.00039097959589294627
+    "mean_positive_contribution": 0.0003015333412723674,
+    "mean_negative_contribution": -0.00029860338971751145,
+    "mean_abs_contribution": 0.00029920285932272863
   },
   {
     "nucleus_id": 8,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.396626740694046,
-    "mean_positive_contribution": 0.0004293817825113272,
-    "mean_negative_contribution": -0.00042844897560536164,
-    "mean_abs_contribution": 0.0004276848756671955
+    "mean_positive_contribution": 0.00034592256309778853,
+    "mean_negative_contribution": -0.00034662746165839886,
+    "mean_abs_contribution": 0.0003452806296575353
   },
   {
     "nucleus_id": 9,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.4131888449192047,
-    "mean_positive_contribution": 0.000301868084820648,
-    "mean_negative_contribution": -0.0002974283340081341,
-    "mean_abs_contribution": 0.00029901981201025307
+    "mean_positive_contribution": 0.00027602178424254037,
+    "mean_negative_contribution": -0.0002722369387232692,
+    "mean_abs_contribution": 0.00027347093721201833
   },
   {
     "nucleus_id": 10,
     "predicted_class": 2,
     "predicted_class_name": "Connective",
     "confidence": 0.31378307938575745,
-    "mean_positive_contribution": 0.00020108006114248454,
-    "mean_negative_contribution": -0.0002007981461648395,
-    "mean_abs_contribution": 0.00020036260685004075
+    "mean_positive_contribution": 0.00019153194294229046,
+    "mean_negative_contribution": -0.0001915490924220188,
+    "mean_abs_contribution": 0.00018681076671035694
   },
   {
     "nucleus_id": 11,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.32917699217796326,
-    "mean_positive_contribution": 0.0002915762651024325,
-    "mean_negative_contribution": -0.00028953765754338647,
-    "mean_abs_contribution": 0.000289826093679229
+    "mean_positive_contribution": 0.00029281568616338927,
+    "mean_negative_contribution": -0.00029138755659518595,
+    "mean_abs_contribution": 0.0002913657733459971
   },
   {
     "nucleus_id": 12,
     "predicted_class": 1,
     "predicted_class_name": "Inflammatory",
     "confidence": 0.40269744396209717,
-    "mean_positive_contribution": 0.0004295309019463898,
-    "mean_negative_contribution": -0.00042786753817706304,
-    "mean_abs_contribution": 0.0004275544245449145
+    "mean_positive_contribution": 0.0004264705547443612,
+    "mean_negative_contribution": -0.0004237210639975681,
+    "mean_abs_contribution": 0.0004239585577642302
   },
   {
     "nucleus_id": 13,
     "predicted_class": 2,
     "predicted_class_name": "Connective",
     "confidence": 0.30999520421028137,
-    "mean_positive_contribution": 0.00020785988516944492,
-    "mean_negative_contribution": -0.0002079419790054832,
-    "mean_abs_contribution": 0.00020733313250365172
+    "mean_positive_contribution": 0.00015966898940238336,
+    "mean_negative_contribution": -0.00015935142912308232,
+    "mean_abs_contribution": 0.0001590751917061333
   }
 ]

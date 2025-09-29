@@ -46,6 +46,7 @@
     "min_nucleus_area": 50,
     "max_nucleus_area": 5000,
     "context_padding": 32,
-    "device": "cuda"
+    "device": "cuda",
+    "confidence_threshold": 0.6
   }
 }
