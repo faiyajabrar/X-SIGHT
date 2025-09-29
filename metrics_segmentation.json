@@ -1,0 +1,70 @@
+{
+  "dataset_size": 7901,
+  "total_pixels": 517799936,
+  "overall_accuracy": 0.9295356710897701,
+  "frequency_weighted_dice": 0.6799269310058963,
+  "mean_dice_including_bg": 0.7423549352984119,
+  "mean_dice_excluding_bg": 0.6976842599171702,
+  "mean_iou_including_bg": 0.6099562449282606,
+  "mean_iou_excluding_bg": 0.5452093960252882,
+  "macro_f1_excluding_bg": 0.697684259917063,
+  "weighted_f1_excluding_bg": 0.7587836920131443,
+  "per_class": {
+    "Background": {
+      "support": 431233612,
+      "precision": 0.9741805515557098,
+      "recall": 0.9573821648206773,
+      "f1": 0.9657083122046209,
+      "dice": 0.9657083122046209,
+      "iou": 0.9336904894431228
+    },
+    "Neoplastic": {
+      "support": 44851064,
+      "precision": 0.7810896244904001,
+      "recall": 0.8308055746458991,
+      "f1": 0.8051809009325348,
+      "dice": 0.8051809009325368,
+      "iou": 0.6738935639386505
+    },
+    "Inflammatory": {
+      "support": 9187777,
+      "precision": 0.6707878300165021,
+      "recall": 0.7381365481552284,
+      "f1": 0.7028525037453306,
+      "dice": 0.7028525037453461,
+      "iou": 0.5418447059989444
+    },
+    "Connective": {
+      "support": 19347373,
+      "precision": 0.6257501083876814,
+      "recall": 0.6849774902256756,
+      "f1": 0.6540256559872372,
+      "dice": 0.6540256559872457,
+      "iou": 0.48591242388574163
+    },
+    "Dead": {
+      "support": 357957,
+      "precision": 0.42319973621131796,
+      "recall": 0.6919993183538805,
+      "f1": 0.525204765529422,
+      "dice": 0.5252047655299253,
+      "iou": 0.35612046557726046
+    },
+    "Epithelial": {
+      "support": 12822153,
+      "precision": 0.7567119558302555,
+      "recall": 0.8511498030011029,
+      "f1": 0.8011574733907898,
+      "dice": 0.8011574733907971,
+      "iou": 0.6682758207258438
+    }
+  },
+  "class_order": [
+    "Background",
+    "Neoplastic",
+    "Inflammatory",
+    "Connective",
+    "Dead",
+    "Epithelial"
+  ]
+}

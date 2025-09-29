@@ -423,8 +423,9 @@ class AdvancedAttentionModel(pl.LightningModule):
         
         # Resume state management
         self.resume_path = resume_path
-        self.training_state_path = Path('lightning_logs/training_state.json')
-        self.data_split_path = Path('lightning_logs/data_split.json')
+        # Store training artifacts under segmentation subfolder
+        self.training_state_path = Path('lightning_logs/segmentation/training_state.json')
+        self.data_split_path = Path('lightning_logs/segmentation/data_split.json')
         
         # Best metrics tracking for resume
         self.best_val_dice = 0.0

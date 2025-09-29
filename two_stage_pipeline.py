@@ -137,7 +137,8 @@ class TwoStageNucleiPipeline:
         # Load the trained Attention U-Net model
         self.segmentation_model = AdvancedAttentionModel.load_from_checkpoint(
             model_path,
-            map_location=self.device
+            map_location=self.device,
+            resume_path=None
         )
         self.segmentation_model = self.segmentation_model.to(self.device)
         self.segmentation_model.eval()
@@ -152,7 +153,8 @@ class TwoStageNucleiPipeline:
         # This loads the Lightning checkpoint and extracts the actual model
         lightning_model = StateOfTheArtClassifierLightning.load_from_checkpoint(
             model_path,
-            map_location=self.device
+            map_location=self.device,
+            resume_path=None
         )
         
         # Extract the actual classifier model from the Lightning wrapper
