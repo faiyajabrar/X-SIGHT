@@ -143,13 +143,15 @@ def evaluate_pipeline_full(
         extracted_nuclei = results['extracted_nuclei']
         classifications = results['classifications']
 
-        # Start from segmentation prediction, then refine with classifier labels inside nucleus regions
+        # IMPROVED STRATEGY: Use confidence-based fusion
+        # Keep good segmentation predictions, only override where classifier is more confident
         pipeline_type_mask = seg_pred.copy()
 
         H, W = seg_pred.shape
         
-        # Improved region mapping: Use watershed-like approach to assign classification results
-        # Create a distance transform to better handle overlapping regions
+        # Confidence threshold for overriding segmentation
+        CONFIDENCE_THRESHOLD = 0.6  # Only override if classifier is confident
+        
         from scipy import ndimage
         
         # Precompute connected components per class for better region extraction
@@ -158,8 +160,7 @@ def evaluate_pipeline_full(
             cls_mask = (seg_pred == cls).astype(np.uint8)
             if cls_mask.any():
                 num_cc, cc_labels = cv2.connectedComponents(cls_mask)
-                # Store both labels and distance transform for this class
-                if num_cc > 1:  # If there are components
+                if num_cc > 1:
                     dist_transform = ndimage.distance_transform_edt(cls_mask)
                 else:
                     dist_transform = None
@@ -167,76 +168,97 @@ def evaluate_pipeline_full(
                 num_cc, cc_labels, dist_transform = 0, None, None
             cc_by_class[cls] = (num_cc, cc_labels, dist_transform)
 
-        # Apply classifications with improved region mapping
+        # Apply classifications with confidence-based fusion
         for nucleus in extracted_nuclei:
             nid = nucleus['nucleus_id']
             if nid not in classifications:
                 continue
-            pred0 = int(classifications[nid]['predicted_class'])
+            
+            classification = classifications[nid]
+            pred0 = int(classification['predicted_class'])
             pred1 = pred0 + 1
+            confidence = float(classification.get('confidence', 0.0))
+            
             centroid = nucleus.get('centroid', (H // 2, W // 2))
             cy, cx = int(centroid[0]), int(centroid[1])
             cy = max(0, min(H - 1, cy))
             cx = max(0, min(W - 1, cx))
+            
+            # Get segmentation prediction at centroid
+            seg_class = int(seg_pred[cy, cx])
+            
+            # CONFIDENCE-BASED DECISION:
+            # 1. If segmentation and classification agree, use that (high confidence)
+            # 2. If they disagree and classifier is confident (>threshold), override
+            # 3. If they disagree and classifier is not confident, keep segmentation
+            
+            should_override = False
+            if seg_class == pred1:
+                # Agreement - no need to change, already correct
+                should_override = False
+            elif seg_class == 0:
+                # Segmentation says background but classifier found nucleus - trust classifier
+                should_override = True
+            elif confidence >= CONFIDENCE_THRESHOLD:
+                # Classifier is confident despite disagreement - override
+                should_override = True
+            else:
+                # Low confidence disagreement - keep segmentation (it's more spatial-aware)
+                should_override = False
 
+            if not should_override:
+                # Keep segmentation prediction, but still track for per-instance metrics
+                if seg_class > 0:
+                    gt_at_centroid = int(gt_type_mask[cy, cx])
+                    if gt_at_centroid > 0:
+                        per_instance_true.append(gt_at_centroid)
+                        per_instance_pred.append(seg_class)  # Use segmentation prediction
+                continue
+
+            # Find region to override
             region_mask = None
             
-            # 1) Try to use explicit mask from nucleus extraction if available
-            m = nucleus.get('mask_patch', None)
-            if isinstance(m, np.ndarray) and m.ndim == 2:
-                # Scale mask to match image size if needed
-                if m.shape != (H, W):
-                    bbox = nucleus.get('bbox', (0, 0, H, W))
-                    y1, x1, y2, x2 = bbox
-                    region_mask = np.zeros((H, W), dtype=bool)
-                    # Resize mask to bbox size
-                    bbox_h, bbox_w = y2 - y1, x2 - x1
-                    if bbox_h > 0 and bbox_w > 0 and m.shape[0] > 0 and m.shape[1] > 0:
-                        try:
-                            mask_resized = cv2.resize(m.astype(np.uint8), (bbox_w, bbox_h), interpolation=cv2.INTER_NEAREST)
-                            region_mask[y1:y2, x1:x2] = mask_resized.astype(bool)
-                        except:
-                            region_mask = None
-                else:
-                    region_mask = m.astype(bool)
+            # 1) Try connected component at centroid
+            if seg_class > 0 and cc_by_class[seg_class][1] is not None:
+                num_cc, cc_labels, dist_transform = cc_by_class[seg_class]
+                cc_id = int(cc_labels[cy, cx])
+                if cc_id > 0:
+                    # Use the connected component from segmentation
+                    region_mask = (cc_labels == cc_id)
             
-            # 2) Fallback: Find the connected component that contains the centroid
-            if region_mask is None:
-                # Find the original segmentation class at centroid
-                seed_cls = int(seg_pred[cy, cx])
-                if seed_cls > 0 and cc_by_class[seed_cls][1] is not None:
-                    num_cc, cc_labels, dist_transform = cc_by_class[seed_cls]
-                    cc_id = int(cc_labels[cy, cx])
-                    if cc_id > 0:
-                        # Use the connected component
-                        region_mask = (cc_labels == cc_id)
-                        
-                        # Expand region slightly using distance transform if available
-                        if dist_transform is not None:
-                            area = int(nucleus.get('area', 100))
-                            # Adaptive expansion based on nucleus size
-                            expansion_radius = min(3, max(1, int(np.sqrt(area / np.pi) * 0.2)))
-                            expanded_mask = dist_transform > 0
-                            expanded_mask = ndimage.binary_dilation(expanded_mask, iterations=expansion_radius)
-                            # Intersect with original class region to avoid overflow
-                            region_mask = np.logical_and(expanded_mask, seg_pred == seed_cls)
+            # 2) Fallback to explicit mask if available
+            if region_mask is None or not region_mask.any():
+                m = nucleus.get('mask_patch', None)
+                if isinstance(m, np.ndarray) and m.ndim == 2:
+                    if m.shape != (H, W):
+                        bbox = nucleus.get('bbox', (0, 0, H, W))
+                        y1, x1, y2, x2 = bbox
+                        region_mask = np.zeros((H, W), dtype=bool)
+                        bbox_h, bbox_w = y2 - y1, x2 - x1
+                        if bbox_h > 0 and bbox_w > 0 and m.shape[0] > 0 and m.shape[1] > 0:
+                            try:
+                                mask_resized = cv2.resize(m.astype(np.uint8), (bbox_w, bbox_h), interpolation=cv2.INTER_NEAREST)
+                                region_mask[y1:y2, x1:x2] = mask_resized.astype(bool)
+                            except:
+                                region_mask = None
+                    else:
+                        region_mask = m.astype(bool)
             
-            # 3) Final fallback: adaptive circle based on predicted area
-            if region_mask is None:
+            # 3) Final fallback: conservative circle only for high confidence
+            if (region_mask is None or not region_mask.any()) and confidence >= 0.8:
                 area = int(nucleus.get('area', 100))
-                rad = max(2, int(np.sqrt(max(1, area) / np.pi) * 1.1))  # Slightly larger circle
+                rad = max(2, int(np.sqrt(max(1, area) / np.pi) * 0.9))  # Smaller, conservative
                 y, x = np.ogrid[:H, :W]
                 circle = (x - cx) ** 2 + (y - cy) ** 2 <= rad ** 2
-                # Intersect with any foreground segmentation to avoid background
                 region_mask = np.logical_and(circle, seg_pred > 0)
-                # If no intersection with foreground, use the circle anyway (classification is confident)
                 if not region_mask.any():
+                    # Only override background if very confident
                     region_mask = circle
             
             if region_mask is None or not region_mask.any():
                 continue
                 
-            # Apply classification to the region
+            # Apply classification override to the region
             pipeline_type_mask[region_mask] = pred1
 
             # Per-instance metrics from centroid label
