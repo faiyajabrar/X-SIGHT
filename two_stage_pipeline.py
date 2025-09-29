@@ -3,7 +3,7 @@ Two-Stage Nuclei Analysis Pipeline
 
 This script implements the complete two-stage pipeline for nuclei analysis:
 1. Stage 1: Segmentation - Attention U-Net locates nuclei and gives rough type prediction
-2. Stage 2: Classification - State-of-the-art EfficientNet classifier provides fine-grained nucleus classification
+2. Stage 2: Classification - EfficientNet classifier provides fine-grained nucleus classification
 
 Usage:
     python two_stage_pipeline.py --segmentation_model path/to/segmentation.ckpt --classifier_model path/to/classifier.ckpt --input_image image.png
@@ -146,7 +146,7 @@ class TwoStageNucleiPipeline:
     
     def load_classifier_model(self, model_path: str):
         """Load the state-of-the-art nucleus classifier model (Stage 2)."""
-        print(f"📁 Loading SOTA classifier model from: {model_path}")
+        print(f"📁 Loading classifier model from: {model_path}")
         
         # Load the trained state-of-the-art nucleus classifier
         # This loads the Lightning checkpoint and extracts the actual model
@@ -166,7 +166,7 @@ class TwoStageNucleiPipeline:
             print(f"✅ Verified: Classifier configured for {lightning_model.num_classes} classes (excluding background)")
             print(f"   Classification classes: {', '.join(self.classification_classes)}")
         
-        print("✅ State-of-the-art classifier model loaded successfully!")
+        print("✅ classifier model loaded successfully!")
         # Try to load training_state.json path hint if present
         try:
             ts_path = Path('lightning_logs/classifier/training_state.json')
@@ -1221,7 +1221,7 @@ def main():
     print("🧬 TWO-STAGE NUCLEI ANALYSIS PIPELINE (STATE-OF-THE-ART)")
     print("="*60)
     print(f"🔍 Segmentation model: {args.segmentation_model}")
-    print(f"🧠 SOTA Classifier model: {args.classifier_model}")
+    print(f"🧠 Classifier model: {args.classifier_model}")
     print(f"📸 Input image: {args.input_image}")
     print(f"⚡ Device: {args.device}")
     print("="*60)

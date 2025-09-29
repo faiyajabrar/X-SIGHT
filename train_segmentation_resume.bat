@@ -1,7 +1,6 @@
 @echo off
 echo =============================================
 echo  RESUME OPTIMIZED ATTENTION U-NET TRAINING
-echo  🏆 TUNED HYPERPARAMETERS (Trial #281)
 echo =============================================
 echo.
 echo 🔄 Resuming training from existing checkpoint

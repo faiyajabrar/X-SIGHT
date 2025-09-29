@@ -1,7 +1,6 @@
 @echo off
 echo =============================================
-echo  OPTIMIZED ATTENTION U-NET TRAINING (32-bit)
-echo  🏆 TUNED HYPERPARAMETERS (Trial #281)
+echo  OPTIMIZED ATTENTION U-NET TRAINING
 echo =============================================
 echo.
 echo 🚀 State-of-the-art training with all improvements
@@ -31,8 +30,6 @@ echo ⏱️  Training Duration: 120 epochs (optimal for OneCycleLR)
 echo 📊 Progressive Resizing: 128px → 256px (full size at epoch 84)
 echo 🛑 Early Stopping: 30 epochs patience (25% of total)
 echo 🔄 SWA Start: Epoch 60 (50% of training)
-echo.
-echo 📚 Using virtual environment Python...
 echo.
 
 venv\Scripts\python.exe training/train.py ^

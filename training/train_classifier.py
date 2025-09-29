@@ -1,40 +1,7 @@
 """
-🚀 STATE-OF-THE-ART Nucleus Classifier Training (Main Script)
+Nucleus Classifier Training (Main Script)
 ===========================================================
 
-This script implements cutting-edge medical image classification techniques:
-
-🧠 ADVANCED ARCHITECTURES:
-- Modern CNN architectures (EfficientNet, ConvNeXt, RegNet)
-- Medical-domain pretrained weights
-- Multi-scale feature extraction
-- Attention mechanisms and squeeze-excitation
-
-⚡ ADVANCED OPTIMIZATION:
-- OneCycleLR with superconvergence
-- Exponential Moving Average (EMA)
-- Stochastic Weight Averaging (SWA)
-
-🎯 ADVANCED TRAINING:
-- Progressive training strategy
-- MixUp and CutMix augmentations
-- Test-Time Augmentation (TTA)
-- Focal Loss with confidence penalty
-- Perfect resume capability
-
-📊 MEDICAL IMAGING OPTIMIZED:
-- Conservative augmentations preserving clinical features
-- Class imbalance handling
-- Uncertainty quantification
-- Clinical confidence scoring
-
-🔄 PERFECT RESUME CAPABILITY:
-- State saved after every epoch
-- Dataset splits preserved
-- Complete training state restoration
-- Seamless continuation from any point
-
-Performance Target: 90%+ F1 score on nucleus classification
 """
 
 import sys
@@ -730,7 +697,7 @@ class StateOfTheArtClassifierLightning(pl.LightningModule):
         logger.info(f"\n{cm_np}")
     
     def configure_optimizers(self):
-        """Configure state-of-the-art optimizers."""
+        """Configure optimizers."""
         
         # Base optimizer
         optimizer = optim.AdamW(

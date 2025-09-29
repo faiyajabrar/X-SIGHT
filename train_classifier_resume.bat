@@ -1,7 +1,6 @@
 @echo off
 echo ============================================================
-echo  🔄 RESUME NUCLEUS CLASSIFIER TRAINING (STATE-OF-THE-ART)
-echo  🏆 MEDICAL IMAGING OPTIMIZED FOR MAXIMUM PERFORMANCE
+echo  🔄 RESUME NUCLEUS CLASSIFIER TRAINING
 echo ============================================================
 echo.
 echo 🔄 PERFECT RESUME CAPABILITY:
@@ -12,9 +11,7 @@ echo   ⚡ Seamless continuation from any epoch
 echo   📈 Preserves EMA weights and optimizer state
 echo.
 echo 🧠 MODERN ARCHITECTURES:
-echo   📊 EfficientNet-B3 (default) - Optimized efficiency/accuracy
-echo   🔬 ConvNeXt - Modern CNN architecture
-echo   ⚡ RegNet - Fast and accurate
+echo   📊 EfficientNet-B3
 echo.
 echo ⚡ ADVANCED OPTIMIZATION:
 echo   🎯 Focal Loss - Better class imbalance handling
@@ -113,8 +110,5 @@ echo   1. Check TensorBoard: tensorboard --logdir lightning_logs
 echo   2. Test the model with two_stage_pipeline.py  
 echo   3. Resume again anytime with this script
 echo   4. Use --resume_from for specific checkpoint
-echo.
-echo 💡 TIP: You can also resume with specific checkpoint:
-echo   python training/train_classifier.py --resume_from path/to/checkpoint
 echo.
 pause 

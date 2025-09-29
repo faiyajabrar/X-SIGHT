@@ -1,13 +1,10 @@
 @echo off
 echo ============================================================
-echo  🚀 NUCLEUS CLASSIFIER TRAINING (STATE-OF-THE-ART)
-echo  🏆 MEDICAL IMAGING OPTIMIZED FOR MAXIMUM PERFORMANCE
+echo  🚀 NUCLEUS CLASSIFIER TRAINING
 echo ============================================================
 echo.
 echo 🧠 MODERN ARCHITECTURES:
-echo   📊 EfficientNet-B3 (default) - Optimized efficiency/accuracy
-echo   🔬 ConvNeXt - Modern CNN architecture
-echo   ⚡ RegNet - Fast and accurate
+echo   📊 EfficientNet-B3
 echo.
 echo ⚡ ADVANCED OPTIMIZATION:
 echo   🎯 Focal Loss - Better class imbalance handling

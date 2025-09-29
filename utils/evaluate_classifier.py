@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Evaluation script for State-of-the-Art Nucleus Classifier training results.
+Evaluation script for Nucleus Classifier training results.
 Shows nucleus images, ground truth labels, and predicted labels with performance metrics.
 """
 
