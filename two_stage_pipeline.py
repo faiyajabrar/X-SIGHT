@@ -65,7 +65,11 @@ class TwoStageNucleiPipeline:
         gradcam_blur_ksize: int = 3,
         gradcam_blur_sigma: float = 0.0,
         shap_bg: int = 8,
-        shap_nsamples: int = 20
+        shap_nsamples: int = 20,
+        # SHAP visualization controls
+        shap_overlay_mode: str = 'masked',
+        shap_top_percent: float = 0.15,
+        shap_alpha: float = 0.6
     ):
         """
         Initialize the two-stage pipeline.
@@ -93,6 +97,10 @@ class TwoStageNucleiPipeline:
         self.gradcam_blur_sigma = gradcam_blur_sigma
         self.shap_bg = shap_bg
         self.shap_nsamples = shap_nsamples
+        # SHAP overlay controls
+        self.shap_overlay_mode = shap_overlay_mode
+        self.shap_top_percent = shap_top_percent
+        self.shap_alpha = shap_alpha
         
         # Class names and colors (Background at index 0, excluded from classification)
         self.class_names = ['Background', 'Neoplastic', 'Inflammatory', 'Connective', 'Dead', 'Epithelial']
@@ -186,6 +194,129 @@ class TwoStageNucleiPipeline:
                 out = self.base_model(x)
                 return torch.softmax(out['logits'], dim=1)
         self._model_probs = _ProbsWrapper(self.classifier_model)
+        
+        # End of load_classifier_model
+
+    # ----------------------
+    # SHAP helper methods (aligned with evaluator)
+    # ----------------------
+    def _create_shap_explainer(self, background: torch.Tensor):
+        if not HAS_SHAP:
+            return None
+        try:
+            background = background.to(self.device).float()
+            self._model_probs.eval()
+            return shap.GradientExplainer(self._model_probs, background)
+        except Exception:
+            return None
+
+    def _ensure_chw(self, image: torch.Tensor) -> torch.Tensor:
+        return image if image.dim() == 4 else image.unsqueeze(0)
+
+    def _denormalize_for_display(self, img_chw: np.ndarray) -> np.ndarray:
+        """Best-effort convert possibly ImageNet-normalized CHW float to HWC uint8 RGB."""
+        arr = img_chw.astype(np.float32)
+        # CHW -> HWC if needed
+        if arr.ndim == 3 and arr.shape[0] in (1, 3):
+            arr_hwc = np.transpose(arr, (1, 2, 0))
+        elif arr.ndim == 3 and arr.shape[-1] in (1, 3):
+            arr_hwc = arr
+        else:
+            arr_hwc = arr
+        # ImageNet stats
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
+        # If appears to be in [0,1], scale; else denormalize using ImageNet
+        if (arr_hwc.min() >= -1e-3) and (arr_hwc.max() <= 1.0 + 1e-3):
+            vis = arr_hwc * 255.0
+        else:
+            if arr_hwc.shape[-1] == 1:
+                vis = arr_hwc * 255.0
+            else:
+                vis = ((arr_hwc * std) + mean) * 255.0
+        vis = np.clip(vis, 0, 255).astype(np.uint8)
+        if vis.ndim == 3 and vis.shape[-1] == 1:
+            vis = np.repeat(vis, 3, axis=-1)
+        return vis
+
+    def _generate_shap_overlay(self, image: torch.Tensor, pred_class: int, explainer, nsamples: int = 20):
+        if not HAS_SHAP or explainer is None:
+            return None, {}, None
+        image_b = self._ensure_chw(image).to(self.device).float().detach()
+        image_b.requires_grad_(True)
+        explained_class = int(pred_class)
+        try:
+            result = explainer.shap_values(image_b, nsamples=nsamples, ranked_outputs=1, output_rank_order='max')
+            if isinstance(result, tuple) and len(result) == 2:
+                shap_values, indexes = result
+                try:
+                    explained_class = int(np.array(indexes)[0][0])
+                except Exception:
+                    explained_class = int(pred_class)
+            else:
+                shap_values = result
+        except Exception:
+            shap_values = explainer.shap_values(image_b, nsamples=nsamples, ranked_outputs=None)
+        sv = None
+        if isinstance(shap_values, list):
+            if len(shap_values) == 1:
+                arr = shap_values[0]
+                if isinstance(arr, torch.Tensor):
+                    arr = arr.detach().cpu().numpy()
+                sv = arr[0]
+            else:
+                idx = explained_class if 0 <= explained_class < len(shap_values) else int(pred_class)
+                idx = max(0, min(idx, len(shap_values) - 1))
+                arr = shap_values[idx]
+                if isinstance(arr, torch.Tensor):
+                    arr = arr.detach().cpu().numpy()
+                sv = arr[0]
+        elif isinstance(shap_values, np.ndarray):
+            sv = shap_values[0]
+        elif isinstance(shap_values, torch.Tensor):
+            sv = shap_values[0].detach().cpu().numpy()
+        if sv is None:
+            return None, {}, None
+        # Normalize/aggregate
+        if sv.ndim == 4:
+            sv = np.squeeze(sv)
+        if sv.ndim == 3 and sv.shape[-1] in (1, 3):
+            sv = np.transpose(sv, (2, 0, 1))
+        if sv.ndim == 2:
+            sv = np.expand_dims(sv, 0)
+        sv_abs = np.abs(sv).sum(axis=0).astype(np.float32)
+        H, W = image_b.shape[-2], image_b.shape[-1]
+        if sv_abs.shape != (H, W):
+            sv_abs = cv2.resize(sv_abs, (W, H))
+        if sv_abs.max() > 0:
+            sv_abs = sv_abs / (sv_abs.max() + 1e-8)
+        heatmap_uint8 = np.uint8(255 * sv_abs)
+        heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_VIRIDIS)
+        img = image_b[0].detach().cpu().numpy()
+        img_vis = self._denormalize_for_display(img)
+        if heatmap_color.shape[:2] != img_vis.shape[:2]:
+            heatmap_color = cv2.resize(heatmap_color, (img_vis.shape[1], img_vis.shape[0]))
+        # Render overlay with optional masked top-percent to avoid full wash
+        mode = str(getattr(self, 'shap_overlay_mode', 'masked')).lower()
+        if mode == 'masked':
+            heat = sv_abs
+            top = float(max(0.0, min(1.0, getattr(self, 'shap_top_percent', 0.15))))
+            thr = float(np.quantile(heat, 1.0 - top)) if np.any(heat > 0) else 1.0
+            mask = (heat >= thr).astype(np.float32)
+            mask3 = np.repeat(mask[:, :, None], 3, axis=2)
+            heat_rgb = cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2RGB)
+            a = float(max(0.0, min(1.0, getattr(self, 'shap_alpha', 0.6))))
+            overlay_rgb = (img_vis * (1.0 - a * mask3) + heat_rgb * (a * mask3)).clip(0, 255).astype(np.uint8)
+        else:
+            overlay_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.6, heatmap_color, 0.4, 0)
+            overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
+        stats = {
+            'mean_positive_contribution': float(np.mean(sv[sv > 0])) if np.any(sv > 0) else 0.0,
+            'mean_negative_contribution': float(np.mean(sv[sv < 0])) if np.any(sv < 0) else 0.0,
+            'mean_abs_contribution': float(np.mean(np.abs(sv))),
+            'explained_class': int(explained_class),
+        }
+        return overlay_rgb, stats, heatmap_uint8
     
     def setup_preprocessing(self):
         """Set up image preprocessing transforms."""
@@ -334,10 +465,12 @@ class TwoStageNucleiPipeline:
         if self.enable_shap:
             try:
                 bg_count = min(max(1, self.shap_bg), len(patch_tensors))
-                background = torch.stack(patch_tensors[:bg_count]).to(self.device).float()
-                background.requires_grad_(False)
-                self._model_probs.eval()
-                explainer = shap.GradientExplainer(self._model_probs, background)
+                background = torch.stack(patch_tensors[:bg_count])
+                # Create explainer using the class method we added to the instance
+                explainer = self._create_shap_explainer(background)
+                if explainer is None:
+                    print("⚠️  SHAP explainer init failed: falling back to disabled SHAP.")
+                    self.enable_shap = False
             except Exception as e:
                 print(f"⚠️  SHAP explainer init failed: {e}")
                 explainer = None
@@ -380,7 +513,6 @@ class TwoStageNucleiPipeline:
                     try:
                         heatmap_uint8, overlay_rgb = self.generate_gradcam(patch_tensors[i].unsqueeze(0), predicted_classes[i].item())
                         cv2.imwrite(str(explanations_dir / f'gradcam_nucleus_{nucleus["instance_id"]}.png'), cv2.cvtColor(overlay_rgb, cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(str(explanations_dir / f'gradcam_heatmap_{nucleus["instance_id"]}.png'), heatmap_uint8)
                         nucleus['gradcam_path'] = str(explanations_dir / f'gradcam_nucleus_{nucleus["instance_id"]}.png')
                     except Exception as e:
                         print(f"⚠️  Grad-CAM failed for nucleus {nucleus['instance_id']}: {e}")
@@ -390,65 +522,16 @@ class TwoStageNucleiPipeline:
                 # SHAP
                 if self.enable_shap and explainer is not None:
                     try:
-                        img_b = patch_tensors[i].unsqueeze(0).to(self.device).float().detach()
-                        img_b.requires_grad_(True)
-                        result = explainer.shap_values(img_b, nsamples=self.shap_nsamples, ranked_outputs=1, output_rank_order='max')
-                        if isinstance(result, tuple) and len(result) == 2:
-                            shap_values, indexes = result
-                        else:
-                            shap_values, indexes = result, None
-                        # Unpack to array [C,H,W]
-                        sv = None
-                        if isinstance(shap_values, list):
-                            arr = shap_values[0]
-                            if isinstance(arr, torch.Tensor):
-                                arr = arr.detach().cpu().numpy()
-                            sv = arr[0]
-                        elif isinstance(shap_values, np.ndarray):
-                            sv = shap_values[0]
-                        elif isinstance(shap_values, torch.Tensor):
-                            sv = shap_values[0].detach().cpu().numpy()
-                        if sv is not None:
-                            if sv.ndim == 4:
-                                sv = np.squeeze(sv)
-                            if sv.ndim == 3 and sv.shape[-1] in (1,3):
-                                sv = np.transpose(sv, (2,0,1))
-                            if sv.ndim == 2:
-                                sv = np.expand_dims(sv, 0)
-                            sv_abs = np.abs(sv).sum(axis=0).astype(np.float32)
-                            H, W = sv_abs.shape
-                            if (H, W) != (224, 224):
-                                sv_abs = cv2.resize(sv_abs, (224, 224))
-                            if sv_abs.max() > 0:
-                                sv_abs = sv_abs / (sv_abs.max() + 1e-8)
-                            heat_uint8 = np.uint8(255 * sv_abs)
-                            heat_color = cv2.applyColorMap(heat_uint8, cv2.COLORMAP_VIRIDIS)
-                            # Prepare original vis from tensor
-                            img = patch_tensors[i].detach().cpu().numpy()
-                            if img.shape[0] == 3:
-                                img = np.transpose(img, (1,2,0))
-                            if img.max() <= 1.0 + 1e-3:
-                                img_vis = (img * 255.0).clip(0,255).astype(np.uint8)
-                            else:
-                                img_vis = img.clip(0,255).astype(np.uint8)
-                            if heat_color.shape[:2] != img_vis.shape[:2]:
-                                heat_color = cv2.resize(heat_color, (img_vis.shape[1], img_vis.shape[0]))
-                            ov_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.6, heat_color, 0.4, 0)
-                            ov_rgb = cv2.cvtColor(ov_bgr, cv2.COLOR_BGR2RGB)
+                        ov_rgb, shap_stats, heat_uint8 = self._generate_shap_overlay(patch_tensors[i], int(predicted_classes[i].item()), explainer, nsamples=self.shap_nsamples)
+                        if ov_rgb is not None:
                             cv2.imwrite(str(explanations_dir / f'shap_nucleus_{nucleus["instance_id"]}.png'), cv2.cvtColor(ov_rgb, cv2.COLOR_RGB2BGR))
-                            cv2.imwrite(str(explanations_dir / f'shap_heatmap_{nucleus["instance_id"]}.png'), heat_uint8)
                             nucleus['shap_path'] = str(explanations_dir / f'shap_nucleus_{nucleus["instance_id"]}.png')
-                            # Simple stats
-                            pos_contrib = float(np.mean(sv[sv > 0])) if np.any(sv > 0) else 0.0
-                            neg_contrib = float(np.mean(sv[sv < 0])) if np.any(sv < 0) else 0.0
                             self._shap_summaries.append({
                                 'nucleus_id': int(nucleus['instance_id']),
                                 'predicted_class': int(predicted_classes[i].item()),
                                 'predicted_class_name': self.classification_classes[predicted_classes[i].item()],
                                 'confidence': float(confidence_scores[i].item()),
-                                'mean_positive_contribution': pos_contrib,
-                                'mean_negative_contribution': neg_contrib,
-                                'mean_abs_contribution': float(np.mean(np.abs(sv)))
+                                **shap_stats,
                             })
                         else:
                             heat_uint8 = None
@@ -745,9 +828,7 @@ class TwoStageNucleiPipeline:
         heatmap_uint8 = np.uint8(255 * heatmap)
         heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
         img = image.squeeze(0).detach().cpu().numpy()
-        if img.shape[0] == 3:
-            img = np.transpose(img, (1,2,0))
-        img_vis = (img * 255.0).clip(0,255).astype(np.uint8) if img.max() <= 1.0 + 1e-3 else img.clip(0,255).astype(np.uint8)
+        img_vis = self._denormalize_for_display(img)
         overlay_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.5, heatmap_color, 0.5, 0)
         overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
         if was_training:

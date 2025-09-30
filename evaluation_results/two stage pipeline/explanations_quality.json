@@ -1,119 +1,146 @@
 [
   {
     "nucleus_id": 0,
-    "predicted_class": 1,
-    "predicted_class_name": "Inflammatory",
-    "confidence": 0.27011334896087646,
-    "gradcam_center_mass": 0.45588740706443787,
-    "shap_center_mass": 0.4659616947174072,
-    "shap_gradcam_corr": 0.14044391275886764
+    "predicted_class": 0,
+    "predicted_class_name": "Neoplastic",
+    "confidence": 0.2591162621974945,
+    "gradcam_center_mass": 0.5429953932762146,
+    "shap_center_mass": 0.34794729948043823,
+    "shap_gradcam_corr": -0.0635316094746049
   },
   {
     "nucleus_id": 1,
-    "predicted_class": 0,
-    "predicted_class_name": "Neoplastic",
-    "confidence": 0.2706087827682495,
-    "gradcam_center_mass": 0.38625967502593994,
-    "shap_center_mass": 0.40383267402648926,
-    "shap_gradcam_corr": 0.0657095370435675
+    "predicted_class": 1,
+    "predicted_class_name": "Inflammatory",
+    "confidence": 0.3679291605949402,
+    "gradcam_center_mass": 0.6489469408988953,
+    "shap_center_mass": 0.3914482891559601,
+    "shap_gradcam_corr": 0.08187214867420543
   },
   {
     "nucleus_id": 2,
-    "predicted_class": 2,
-    "predicted_class_name": "Connective",
-    "confidence": 0.27635446190834045,
-    "gradcam_center_mass": 0.3909558057785034,
-    "shap_center_mass": 0.32614925503730774,
-    "shap_gradcam_corr": -0.09203278877239264
+    "predicted_class": 0,
+    "predicted_class_name": "Neoplastic",
+    "confidence": 0.2655777335166931,
+    "gradcam_center_mass": 0.3845077455043793,
+    "shap_center_mass": 0.3603423237800598,
+    "shap_gradcam_corr": 0.03680373764857088
   },
   {
     "nucleus_id": 3,
-    "predicted_class": 0,
-    "predicted_class_name": "Neoplastic",
-    "confidence": 0.265409916639328,
-    "gradcam_center_mass": 0.348055899143219,
-    "shap_center_mass": 0.34461545944213867,
-    "shap_gradcam_corr": -0.03574480807165122
+    "predicted_class": 2,
+    "predicted_class_name": "Connective",
+    "confidence": 0.3048403561115265,
+    "gradcam_center_mass": 0.43440163135528564,
+    "shap_center_mass": 0.544064462184906,
+    "shap_gradcam_corr": 0.09369740450068215
   },
   {
     "nucleus_id": 4,
     "predicted_class": 0,
     "predicted_class_name": "Neoplastic",
-    "confidence": 0.2630937695503235,
-    "gradcam_center_mass": 0.37020671367645264,
-    "shap_center_mass": 0.3478262722492218,
-    "shap_gradcam_corr": -0.10815194401991236
+    "confidence": 0.26732107996940613,
+    "gradcam_center_mass": 0.5760084986686707,
+    "shap_center_mass": 0.36834847927093506,
+    "shap_gradcam_corr": -0.08096683641230185
   },
   {
     "nucleus_id": 5,
-    "predicted_class": 1,
-    "predicted_class_name": "Inflammatory",
-    "confidence": 0.38914164900779724,
-    "gradcam_center_mass": 0.3851204812526703,
-    "shap_center_mass": 0.5019683241844177,
-    "shap_gradcam_corr": 0.025796171515099182
+    "predicted_class": 4,
+    "predicted_class_name": "Epithelial",
+    "confidence": 0.26351210474967957,
+    "gradcam_center_mass": 0.37654855847358704,
+    "shap_center_mass": 0.37193191051483154,
+    "shap_gradcam_corr": 0.0200681724995648
   },
   {
     "nucleus_id": 6,
-    "predicted_class": 1,
-    "predicted_class_name": "Inflammatory",
-    "confidence": 0.35829004645347595,
-    "gradcam_center_mass": 0.6055976748466492,
-    "shap_center_mass": 0.5308629870414734,
-    "shap_gradcam_corr": 0.067783652249416
+    "predicted_class": 0,
+    "predicted_class_name": "Neoplastic",
+    "confidence": 0.27082765102386475,
+    "gradcam_center_mass": 0.37210482358932495,
+    "shap_center_mass": 0.4340564012527466,
+    "shap_gradcam_corr": -0.08847794612928114
   },
   {
     "nucleus_id": 7,
-    "predicted_class": 2,
-    "predicted_class_name": "Connective",
-    "confidence": 0.2534269392490387,
-    "gradcam_center_mass": 0.5683969259262085,
-    "shap_center_mass": 0.4760359525680542,
-    "shap_gradcam_corr": -0.09336120185168387
+    "predicted_class": 4,
+    "predicted_class_name": "Epithelial",
+    "confidence": 0.357077419757843,
+    "gradcam_center_mass": 0.5632462501525879,
+    "shap_center_mass": 0.5099207758903503,
+    "shap_gradcam_corr": 0.03154569260815561
   },
   {
     "nucleus_id": 8,
-    "predicted_class": 1,
-    "predicted_class_name": "Inflammatory",
-    "confidence": 0.3242541551589966,
-    "gradcam_center_mass": 0.37398672103881836,
-    "shap_center_mass": 0.3274001181125641,
-    "shap_gradcam_corr": 0.0598904567135968
+    "predicted_class": 0,
+    "predicted_class_name": "Neoplastic",
+    "confidence": 0.24782586097717285,
+    "gradcam_center_mass": 0.36791718006134033,
+    "shap_center_mass": 0.4908732771873474,
+    "shap_gradcam_corr": -0.04579661043599127
   },
   {
     "nucleus_id": 9,
-    "predicted_class": 2,
-    "predicted_class_name": "Connective",
-    "confidence": 0.29060032963752747,
-    "gradcam_center_mass": 0.4304221272468567,
-    "shap_center_mass": 0.46447914838790894,
-    "shap_gradcam_corr": 0.10058406021228283
+    "predicted_class": 0,
+    "predicted_class_name": "Neoplastic",
+    "confidence": 0.24782000482082367,
+    "gradcam_center_mass": 0.49466875195503235,
+    "shap_center_mass": 0.4180077612400055,
+    "shap_gradcam_corr": -0.04356942345427162
   },
   {
     "nucleus_id": 10,
-    "predicted_class": 2,
-    "predicted_class_name": "Connective",
-    "confidence": 0.31155160069465637,
-    "gradcam_center_mass": 0.4162719249725342,
-    "shap_center_mass": 0.4605556130409241,
-    "shap_gradcam_corr": 0.27475591048648834
+    "predicted_class": 0,
+    "predicted_class_name": "Neoplastic",
+    "confidence": 0.26417723298072815,
+    "gradcam_center_mass": 0.45833873748779297,
+    "shap_center_mass": 0.3815569281578064,
+    "shap_gradcam_corr": 0.04600497014317704
   },
   {
     "nucleus_id": 11,
-    "predicted_class": 1,
-    "predicted_class_name": "Inflammatory",
-    "confidence": 0.38396719098091125,
-    "gradcam_center_mass": 0.41412997245788574,
-    "shap_center_mass": 0.5373291969299316,
-    "shap_gradcam_corr": 0.10776715393297706
+    "predicted_class": 2,
+    "predicted_class_name": "Connective",
+    "confidence": 0.29845401644706726,
+    "gradcam_center_mass": 0.3173384368419647,
+    "shap_center_mass": 0.2968827784061432,
+    "shap_gradcam_corr": 0.028315657546421704
   },
   {
     "nucleus_id": 12,
-    "predicted_class": 0,
-    "predicted_class_name": "Neoplastic",
-    "confidence": 0.25908684730529785,
-    "gradcam_center_mass": 0.47304683923721313,
-    "shap_center_mass": 0.3822420537471771,
-    "shap_gradcam_corr": -0.02933715106715608
+    "predicted_class": 1,
+    "predicted_class_name": "Inflammatory",
+    "confidence": 0.31923410296440125,
+    "gradcam_center_mass": 0.5913577675819397,
+    "shap_center_mass": 0.5161194205284119,
+    "shap_gradcam_corr": 0.4529056537246689
+  },
+  {
+    "nucleus_id": 13,
+    "predicted_class": 2,
+    "predicted_class_name": "Connective",
+    "confidence": 0.2866364121437073,
+    "gradcam_center_mass": 0.43932345509529114,
+    "shap_center_mass": 0.462507426738739,
+    "shap_gradcam_corr": 0.14790245507483857
+  },
+  {
+    "nucleus_id": 14,
+    "predicted_class": 1,
+    "predicted_class_name": "Inflammatory",
+    "confidence": 0.33478593826293945,
+    "gradcam_center_mass": 0.560276985168457,
+    "shap_center_mass": 0.4040954113006592,
+    "shap_gradcam_corr": 0.12102213684222102
+  },
+  {
+    "nucleus_id": 15,
+    "predicted_class": 2,
+    "predicted_class_name": "Connective",
+    "confidence": 0.329786479473114,
+    "gradcam_center_mass": 0.4452495276927948,
+    "shap_center_mass": 0.3630925118923187,
+    "shap_gradcam_corr": 0.04444276659132529
   }
 ]

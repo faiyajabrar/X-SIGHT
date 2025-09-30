@@ -6,9 +6,9 @@
     "pred_label": 0,
     "pred_class": "Neoplastic",
     "confidence": 0.2538202106952667,
-    "mean_positive_contribution": 8.359011325798843e-05,
-    "mean_negative_contribution": -8.324363517964334e-05,
-    "mean_abs_contribution": 8.330051404185558e-05,
+    "mean_positive_contribution": 0.00010754189683860695,
+    "mean_negative_contribution": -0.00010649881226180007,
+    "mean_abs_contribution": 0.00010687060118237137,
     "explained_class": 0
   },
   {
@@ -18,9 +18,9 @@
     "pred_label": 1,
     "pred_class": "Inflammatory",
     "confidence": 0.37241509556770325,
-    "mean_positive_contribution": 0.00022923370450664515,
-    "mean_negative_contribution": -0.0002272747140701799,
-    "mean_abs_contribution": 0.0002268214665134115,
+    "mean_positive_contribution": 0.00014396472105260137,
+    "mean_negative_contribution": -0.0001434121937990231,
+    "mean_abs_contribution": 0.0001433029954647653,
     "explained_class": 1
   },
   {
@@ -30,9 +30,9 @@
     "pred_label": 0,
     "pred_class": "Neoplastic",
     "confidence": 0.26531583070755005,
-    "mean_positive_contribution": 0.0001363988357855316,
-    "mean_negative_contribution": -0.0001358620584869496,
-    "mean_abs_contribution": 0.00013527604573388037,
+    "mean_positive_contribution": 0.00012586957812830052,
+    "mean_negative_contribution": -0.00012432104869947806,
+    "mean_abs_contribution": 0.00012475691480428683,
     "explained_class": 0
   },
   {
@@ -42,9 +42,9 @@
     "pred_label": 4,
     "pred_class": "Epithelial",
     "confidence": 0.4914137125015259,
-    "mean_positive_contribution": 0.00045110999410994724,
-    "mean_negative_contribution": -0.00045077307707952263,
-    "mean_abs_contribution": 0.00044867674211337017,
+    "mean_positive_contribution": 0.00021534098363382208,
+    "mean_negative_contribution": -0.0002133769016497266,
+    "mean_abs_contribution": 0.00021389349350996504,
     "explained_class": 4
   },
   {
@@ -54,9 +54,9 @@
     "pred_label": 4,
     "pred_class": "Epithelial",
     "confidence": 0.46183106303215027,
-    "mean_positive_contribution": 0.0005380435869115018,
-    "mean_negative_contribution": -0.0005327261553144175,
-    "mean_abs_contribution": 0.0005320259499743108,
+    "mean_positive_contribution": 0.0002739854484501208,
+    "mean_negative_contribution": -0.00027046192354679785,
+    "mean_abs_contribution": 0.0002714935892583081,
     "explained_class": 4
   },
   {
@@ -66,9 +66,9 @@
     "pred_label": 2,
     "pred_class": "Connective",
     "confidence": 0.2906346917152405,
-    "mean_positive_contribution": 0.0001425830543465218,
-    "mean_negative_contribution": -0.00014055551351254547,
-    "mean_abs_contribution": 0.00014067362273699263,
+    "mean_positive_contribution": 9.855961178970214e-05,
+    "mean_negative_contribution": -9.802148510041986e-05,
+    "mean_abs_contribution": 9.802711905767943e-05,
     "explained_class": 2
   },
   {
@@ -78,9 +78,9 @@
     "pred_label": 4,
     "pred_class": "Epithelial",
     "confidence": 0.4780873656272888,
-    "mean_positive_contribution": 0.00010044835671343942,
-    "mean_negative_contribution": -0.0001003632392870782,
-    "mean_abs_contribution": 9.977543057509454e-05,
+    "mean_positive_contribution": 0.00024172861497284668,
+    "mean_negative_contribution": -0.00024091632921766464,
+    "mean_abs_contribution": 0.00024067601183798968,
     "explained_class": 4
   },
   {
@@ -90,9 +90,9 @@
     "pred_label": 2,
     "pred_class": "Connective",
     "confidence": 0.2740318179130554,
-    "mean_positive_contribution": 0.00015621872615332845,
-    "mean_negative_contribution": -0.00015578923587924006,
-    "mean_abs_contribution": 0.00015588008637989283,
+    "mean_positive_contribution": 9.32362453473058e-05,
+    "mean_negative_contribution": -9.295025154850106e-05,
+    "mean_abs_contribution": 9.301990335165758e-05,
     "explained_class": 2
   }
 ]

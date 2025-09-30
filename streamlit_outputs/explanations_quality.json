@@ -5,8 +5,8 @@
     "predicted_class_name": "Neoplastic",
     "confidence": 0.24433349072933197,
     "gradcam_center_mass": 0.4342580735683441,
-    "shap_center_mass": 0.2842310667037964,
-    "shap_gradcam_corr": 0.03544954588206511
+    "shap_center_mass": 0.2805129885673523,
+    "shap_gradcam_corr": 0.04433941803217343
   },
   {
     "nucleus_id": 1,
@@ -14,8 +14,8 @@
     "predicted_class_name": "Connective",
     "confidence": 0.25933945178985596,
     "gradcam_center_mass": 0.34208595752716064,
-    "shap_center_mass": 0.3251253366470337,
-    "shap_gradcam_corr": -0.17852488748079504
+    "shap_center_mass": 0.28380391001701355,
+    "shap_gradcam_corr": -0.1942596719653893
   },
   {
     "nucleus_id": 2,
@@ -23,8 +23,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.3760469853878021,
     "gradcam_center_mass": 0.4192388653755188,
-    "shap_center_mass": 0.4630422592163086,
-    "shap_gradcam_corr": 0.09614523324870694
+    "shap_center_mass": 0.3236349821090698,
+    "shap_gradcam_corr": 0.04054058034086767
   },
   {
     "nucleus_id": 3,
@@ -32,8 +32,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.4017922878265381,
     "gradcam_center_mass": 0.2504213750362396,
-    "shap_center_mass": 0.2886747419834137,
-    "shap_gradcam_corr": 0.0919237145947823
+    "shap_center_mass": 0.2993133068084717,
+    "shap_gradcam_corr": 0.08178787722384226
   },
   {
     "nucleus_id": 4,
@@ -41,8 +41,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.31557366251945496,
     "gradcam_center_mass": 0.4619542062282562,
-    "shap_center_mass": 0.35137805342674255,
-    "shap_gradcam_corr": 0.13418841606820045
+    "shap_center_mass": 0.4189324975013733,
+    "shap_gradcam_corr": 0.11580947131420084
   },
   {
     "nucleus_id": 5,
@@ -50,8 +50,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.3133748173713684,
     "gradcam_center_mass": 0.6375879049301147,
-    "shap_center_mass": 0.3000357747077942,
-    "shap_gradcam_corr": 0.030099661116941054
+    "shap_center_mass": 0.33414068818092346,
+    "shap_gradcam_corr": 0.018147622760758916
   },
   {
     "nucleus_id": 6,
@@ -59,8 +59,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.31396064162254333,
     "gradcam_center_mass": 0.4441825747489929,
-    "shap_center_mass": 0.4076797068119049,
-    "shap_gradcam_corr": -0.11408538577027404
+    "shap_center_mass": 0.2592782974243164,
+    "shap_gradcam_corr": -0.09934882831899566
   },
   {
     "nucleus_id": 7,
@@ -68,8 +68,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.42355644702911377,
     "gradcam_center_mass": 0.5703556537628174,
-    "shap_center_mass": 0.29692214727401733,
-    "shap_gradcam_corr": -0.05721777027651199
+    "shap_center_mass": 0.28127843141555786,
+    "shap_gradcam_corr": -0.033809740774074816
   },
   {
     "nucleus_id": 8,
@@ -77,8 +77,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.396626740694046,
     "gradcam_center_mass": 0.4157807230949402,
-    "shap_center_mass": 0.3297528326511383,
-    "shap_gradcam_corr": 0.16696526963350902
+    "shap_center_mass": 0.32012519240379333,
+    "shap_gradcam_corr": 0.1195959899122915
   },
   {
     "nucleus_id": 9,
@@ -86,8 +86,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.4131888449192047,
     "gradcam_center_mass": 0.4364549219608307,
-    "shap_center_mass": 0.3134896755218506,
-    "shap_gradcam_corr": 0.10291745955996655
+    "shap_center_mass": 0.35395675897598267,
+    "shap_gradcam_corr": 0.105944098753968
   },
   {
     "nucleus_id": 10,
@@ -95,8 +95,8 @@
     "predicted_class_name": "Connective",
     "confidence": 0.31378307938575745,
     "gradcam_center_mass": 0.021807625889778137,
-    "shap_center_mass": 0.3286797106266022,
-    "shap_gradcam_corr": -0.04173415608159576
+    "shap_center_mass": 0.25731968879699707,
+    "shap_gradcam_corr": -0.007105208773280144
   },
   {
     "nucleus_id": 11,
@@ -104,8 +104,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.32917699217796326,
     "gradcam_center_mass": 0.3107529580593109,
-    "shap_center_mass": 0.3828531503677368,
-    "shap_gradcam_corr": 0.1429891868818866
+    "shap_center_mass": 0.4239822328090668,
+    "shap_gradcam_corr": 0.092007163177615
   },
   {
     "nucleus_id": 12,
@@ -113,8 +113,8 @@
     "predicted_class_name": "Inflammatory",
     "confidence": 0.40269744396209717,
     "gradcam_center_mass": 0.3073606491088867,
-    "shap_center_mass": 0.3137241005897522,
-    "shap_gradcam_corr": 0.10639831563231916
+    "shap_center_mass": 0.28668612241744995,
+    "shap_gradcam_corr": 0.1592144699979826
   },
   {
     "nucleus_id": 13,
@@ -122,7 +122,7 @@
     "predicted_class_name": "Connective",
     "confidence": 0.30999520421028137,
     "gradcam_center_mass": 0.2780129611492157,
-    "shap_center_mass": 0.35893186926841736,
-    "shap_gradcam_corr": 0.007428200874993296
+    "shap_center_mass": 0.3488663136959076,
+    "shap_gradcam_corr": 0.06999627044125076
   }
 ]

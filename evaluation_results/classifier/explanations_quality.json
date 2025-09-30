@@ -3,64 +3,64 @@
     "sample_idx": 277,
     "pred_class": "Neoplastic",
     "confidence": 0.2538202106952667,
-    "gradcam_center_mass": 0.3508974015712738,
-    "shap_center_mass": 0.3686077892780304,
-    "shap_gradcam_corr": 0.0477492261965828
+    "gradcam_center_mass": 0.35083404183387756,
+    "shap_center_mass": 0.37941211462020874,
+    "shap_gradcam_corr": 0.16338446339460574
   },
   {
     "sample_idx": 13735,
     "pred_class": "Inflammatory",
     "confidence": 0.37241509556770325,
-    "gradcam_center_mass": 0.5189156532287598,
-    "shap_center_mass": 0.43587249517440796,
-    "shap_gradcam_corr": 0.21050049447112226
+    "gradcam_center_mass": 0.518795371055603,
+    "shap_center_mass": 0.4020928740501404,
+    "shap_gradcam_corr": 0.17244443093661407
   },
   {
     "sample_idx": 15832,
     "pred_class": "Neoplastic",
     "confidence": 0.26531583070755005,
-    "gradcam_center_mass": 0.3346884846687317,
-    "shap_center_mass": 0.35045331716537476,
-    "shap_gradcam_corr": -0.10841457127533216
+    "gradcam_center_mass": 0.33477458357810974,
+    "shap_center_mass": 0.34786906838417053,
+    "shap_gradcam_corr": -0.04979056436096912
   },
   {
     "sample_idx": 17497,
     "pred_class": "Epithelial",
     "confidence": 0.4914137125015259,
-    "gradcam_center_mass": 0.24101653695106506,
-    "shap_center_mass": 0.20930372178554535,
-    "shap_gradcam_corr": 0.20513743914410734
+    "gradcam_center_mass": 0.24104374647140503,
+    "shap_center_mass": 0.3441377580165863,
+    "shap_gradcam_corr": 0.02517448408557747
   },
   {
     "sample_idx": 23785,
     "pred_class": "Epithelial",
     "confidence": 0.46183106303215027,
-    "gradcam_center_mass": 0.24848707020282745,
-    "shap_center_mass": 0.26405513286590576,
-    "shap_gradcam_corr": -0.03276099501912766
+    "gradcam_center_mass": 0.2484767735004425,
+    "shap_center_mass": 0.32052311301231384,
+    "shap_gradcam_corr": -0.004494068161263841
   },
   {
     "sample_idx": 26830,
     "pred_class": "Connective",
     "confidence": 0.2906346917152405,
-    "gradcam_center_mass": 0.39462143182754517,
-    "shap_center_mass": 0.48571404814720154,
-    "shap_gradcam_corr": 0.045747772144731816
+    "gradcam_center_mass": 0.3946525752544403,
+    "shap_center_mass": 0.5151566863059998,
+    "shap_gradcam_corr": 0.04480621706659218
   },
   {
     "sample_idx": 32674,
     "pred_class": "Epithelial",
     "confidence": 0.4780873656272888,
-    "gradcam_center_mass": 0.4091129004955292,
-    "shap_center_mass": 0.17739824950695038,
-    "shap_gradcam_corr": 0.036291047802264186
+    "gradcam_center_mass": 0.40905293822288513,
+    "shap_center_mass": 0.3288056254386902,
+    "shap_gradcam_corr": 0.04036248356815227
   },
   {
     "sample_idx": 33797,
     "pred_class": "Connective",
     "confidence": 0.2740318179130554,
-    "gradcam_center_mass": 0.22535519301891327,
-    "shap_center_mass": 0.4051644802093506,
-    "shap_gradcam_corr": -0.06182136560545682
+    "gradcam_center_mass": 0.2253289371728897,
+    "shap_center_mass": 0.4141981601715088,
+    "shap_gradcam_corr": -0.14170861461544093
   }
 ]

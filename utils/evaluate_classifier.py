@@ -81,6 +81,9 @@ class NucleusClassifierEvaluator:
             [255, 255, 0],    # Dead - yellow
             [255, 0, 255],    # Epithelial - magenta
         ], dtype=np.uint8)
+        # Normalization used during training (ImageNet)
+        self._norm_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
+        self._norm_std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
         
         # Load model
         self.load_model(model_path)
@@ -94,6 +97,34 @@ class NucleusClassifierEvaluator:
         self._gc_blur_ksize = 0
         self._gc_blur_sigma = 0.0
         self._register_gradcam_hooks()
+    
+    def _denormalize_for_display(self, img_chw: np.ndarray) -> np.ndarray:
+        """Convert a possibly ImageNet-normalized CHW float array to HWC uint8 RGB.
+        Handles inputs in [0,1] as well as z-scored inputs.
+        """
+        # Ensure CHW float32
+        arr = img_chw.astype(np.float32)
+        if arr.ndim == 3 and arr.shape[0] in (1, 3):
+            arr_hwc = np.transpose(arr, (1, 2, 0))
+        elif arr.ndim == 3 and arr.shape[-1] in (1, 3):
+            arr_hwc = arr
+        else:
+            # Fallback: try to interpret last dim as channels
+            arr_hwc = arr
+        # If already in [0,1], just scale; else assume ImageNet normalization
+        if (arr_hwc.min() >= -1e-3) and (arr_hwc.max() <= 1.0 + 1e-3):
+            vis = arr_hwc * 255.0
+        else:
+            # Assume Imagenet normalization
+            if arr_hwc.shape[-1] == 1:
+                vis = (arr_hwc * 255.0)
+            else:
+                vis = ((arr_hwc * self._norm_std) + self._norm_mean) * 255.0
+        vis = np.clip(vis, 0, 255).astype(np.uint8)
+        # Guarantee 3-channel RGB for display
+        if vis.ndim == 3 and vis.shape[-1] == 1:
+            vis = np.repeat(vis, 3, axis=-1)
+        return vis
     
     def load_model(self, model_path: str):
         """Load the trained classifier model."""
@@ -353,16 +384,9 @@ class NucleusClassifierEvaluator:
         heatmap_uint8 = np.uint8(255 * heatmap)
         heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)  # BGR
         
-        # Prepare original image for overlay (denormalize if needed)
+        # Prepare original image for overlay (proper denormalization)
         img = image.squeeze(0).detach().cpu().numpy()  # [C,H,W]
-        if img.shape[0] == 3:
-            img = np.transpose(img, (1, 2, 0))
-        # If normalized [0,1] or ImageNet, just clamp to 0-1 for visualization
-        img_vis = img.copy()
-        if img_vis.max() <= 1.0 + 1e-3:
-            img_vis = (img_vis * 255.0).clip(0, 255).astype(np.uint8)
-        else:
-            img_vis = img_vis.clip(0, 255).astype(np.uint8)
+        img_vis = self._denormalize_for_display(img)  # HWC uint8 RGB
         
         overlay_bgr = cv2.addWeighted(cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR), 0.5, heatmap_color, 0.5, 0)
         overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
@@ -459,15 +483,9 @@ class NucleusClassifierEvaluator:
         heatmap_uint8 = np.uint8(255 * sv_abs)
         heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_VIRIDIS)
         
-        # Prepare original image
+        # Prepare original image (proper denormalization)
         img = image_b[0].detach().cpu().numpy()
-        if img.shape[0] == 3:
-            img = np.transpose(img, (1, 2, 0))
-        img_vis = img.copy()
-        if img_vis.max() <= 1.0 + 1e-3:
-            img_vis = (img_vis * 255.0).clip(0, 255).astype(np.uint8)
-        else:
-            img_vis = img_vis.clip(0, 255).astype(np.uint8)
+        img_vis = self._denormalize_for_display(img)  # HWC uint8 RGB
         if heatmap_color.shape[:2] != img_vis.shape[:2]:
             heatmap_color = cv2.resize(heatmap_color, (img_vis.shape[1], img_vis.shape[0]))
         
@@ -558,15 +576,8 @@ class NucleusClassifierEvaluator:
             probs = probabilities[i]
             sample_idx = sample_indices[i]
             
-            # Denormalize image for display
-            if img.max() <= 1.0:
-                img_display = (img * 255).astype(np.uint8)
-            else:
-                img_display = img.astype(np.uint8)
-            
-            # Ensure RGB format
-            if img_display.shape[0] == 3:  # CHW format
-                img_display = np.transpose(img_display, (1, 2, 0))
+            # Properly denormalize normalized tensor to RGB uint8 for display
+            img_display = self._denormalize_for_display(img)
             
             # Show image with border color indicating correctness
             border_color = 'green' if true_label == pred_label else 'red'
@@ -814,8 +825,6 @@ class NucleusClassifierEvaluator:
                     heatmap_uint8, overlay_rgb = self.generate_gradcam(image, pred_label)
                     out_path = explanations_dir / f'gradcam_sample_{idx}.png'
                     cv2.imwrite(str(out_path), cv2.cvtColor(overlay_rgb, cv2.COLOR_RGB2BGR))
-                    # Also save raw heatmap for verification
-                    cv2.imwrite(str(explanations_dir / f'gradcam_heatmap_{idx}.png'), heatmap_uint8)
                     gradcam_saved += 1
                     # Quality metric: center-mass concentration for Grad-CAM
                     ghm = heatmap_uint8.astype(np.float32) / 255.0
@@ -839,8 +848,6 @@ class NucleusClassifierEvaluator:
                     if shap_overlay is not None:
                         out_path = explanations_dir / f'shap_overlay_sample_{idx}.png'
                         cv2.imwrite(str(out_path), cv2.cvtColor(shap_overlay, cv2.COLOR_RGB2BGR))
-                        if shap_heat is not None:
-                            cv2.imwrite(str(explanations_dir / f'shap_heatmap_{idx}.png'), shap_heat)
                         shap_summaries.append({
                             'sample_idx': int(idx),
                             'true_label': int(true_label),

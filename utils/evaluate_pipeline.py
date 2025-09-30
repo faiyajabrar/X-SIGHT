@@ -396,6 +396,11 @@ def main():
     parser.add_argument('--no_display', action='store_true',
                        help='Do not display plots (save only)')
     
+    # SHAP overlay controls
+    parser.add_argument('--shap_overlay_mode', type=str, default='masked', choices=['masked', 'full'], help='How to render SHAP overlays saved by pipeline')
+    parser.add_argument('--shap_top_percent', type=float, default=0.15, help='Top percentile of SHAP heat to overlay when masked mode is enabled (0..1)')
+    parser.add_argument('--shap_alpha', type=float, default=0.6, help='Overlay alpha for SHAP masked regions')
+
     args = parser.parse_args()
     
     print("🧬 TWO-STAGE NUCLEI PIPELINE DEMONSTRATION")
@@ -447,7 +452,11 @@ def main():
         gradcam_blur_ksize=5,
         gradcam_blur_sigma=1.0,
         shap_bg=8,
-        shap_nsamples=20
+        shap_nsamples=20,
+        # pass-through SHAP overlay controls
+        shap_overlay_mode=getattr(args, 'shap_overlay_mode', 'masked'),
+        shap_top_percent=getattr(args, 'shap_top_percent', 0.15),
+        shap_alpha=getattr(args, 'shap_alpha', 0.6),
     )
     
     # Save original image
