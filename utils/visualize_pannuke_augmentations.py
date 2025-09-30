@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from typing import List, Tuple, Optional
 
 import numpy as np
@@ -10,6 +11,9 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 import torch
+
+# Ensure project root is on sys.path when running this file directly
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import dataset and its internal preprocessing transforms
 from utils.pannuke_dataset import PanNukeDataset, CLAHETransform, ZScoreTransform
@@ -40,11 +44,11 @@ def _to_display_image(img: np.ndarray | torch.Tensor) -> np.ndarray:
     if img.ndim == 3 and img.shape[0] in (1, 3) and img.shape[0] != img.shape[-1]:
         img = np.transpose(img, (1, 2, 0))
     img = img.astype(np.float32)
-    if img.max() > 2.0:  # likely [0,255]
+    # Heuristic: if data is in [0..255] and non-negative, scale by 255; otherwise min-max
+    mn, mx = float(img.min()), float(img.max())
+    if mn >= 0.0 and mx <= 255.0 and mx > 1.5:
         img = img / 255.0
     else:
-        # scale to [0,1]
-        mn, mx = float(img.min()), float(img.max())
         img = (img - mn) / (mx - mn + 1e-7)
     img = np.clip(img, 0.0, 1.0)
     return img
@@ -209,11 +213,19 @@ def _plot_steps(
     save_path: Optional[str] = None,
     show: bool = True,
     ncols: int = 6,
+    nrows: Optional[int] = None,
 ):
-    """Render a grid (images only) across processing steps in row-major order."""
+    """Render a grid (images only) across processing steps in row-major order.
+
+    If nrows is provided, it overrides the automatic computation to allow
+    forcing a fixed grid layout (e.g., 3x6).
+    """
     num_steps = len(labels)
     ncols = max(1, int(ncols))
-    nrows = (num_steps + ncols - 1) // ncols
+    if nrows is None:
+        nrows = (num_steps + ncols - 1) // ncols
+    else:
+        nrows = max(1, int(nrows))
 
     fig, axs = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3 * nrows))
     if nrows == 1 and ncols == 1:
@@ -344,10 +356,50 @@ def visualize_sample(
     class_map = ds._mask_to_class_map(np.ascontiguousarray(raw_mask_6))
     raw_img = np.ascontiguousarray(raw_img).astype(np.uint8)
 
-    if ensure_all and augmentations is not None:
-        # Catalog mode: show each augmentation individually applied on raw
-        labels, images = _catalog_augmentations(raw_img, class_map, augmentations)
-        _plot_steps(labels, images, save_path=save_path, show=show, ncols=ncols)
+    if ensure_all:
+        # Build a specific catalog: include Raw and selected transforms only
+        labels = ["Raw"]
+        images = [raw_img]
+
+        # Use provided base_size for resize if available, otherwise default to 256
+        resize_size = base_size if base_size is not None else 256
+
+        specific_transforms: List[A.BasicTransform] = [
+            A.HorizontalFlip(p=1.0),
+            A.VerticalFlip(p=1.0),
+            A.RandomRotate90(p=1.0),
+            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.15, rotate_limit=20, p=1.0),
+            A.GridDistortion(distort_limit=0.15, p=1.0),
+            A.ElasticTransform(alpha=1, sigma=50, alpha_affine=50, p=1.0),
+            A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=1.0),
+            A.HueSaturationValue(hue_shift_limit=15, sat_shift_limit=20, val_shift_limit=15, p=1.0),
+            A.ColorJitter(brightness=0.1, contrast=0.15, saturation=0.1, hue=0.02, p=1.0),
+            A.GaussianBlur(blur_limit=(1, 5), p=1.0),
+            A.GaussNoise(var_limit=(10, 80), p=1.0),
+            A.MedianBlur(blur_limit=5, p=1.0),
+            A.Resize(resize_size, resize_size),
+            CLAHETransform(),
+            ZScoreTransform(),
+        ]
+
+        for tr in specific_transforms:
+            try:
+                img_t, _ = _force_apply_transform(raw_img, class_map, tr)
+                images.append(img_t)
+                # Pretty label for known custom transforms
+                if isinstance(tr, CLAHETransform):
+                    labels.append("CLAHE")
+                elif isinstance(tr, ZScoreTransform):
+                    labels.append("Z-Score")
+                elif isinstance(tr, A.Resize):
+                    labels.append("Resize")
+                else:
+                    labels.append(tr.__class__.__name__)
+            except Exception:
+                continue
+
+        # Force a 3x6 grid: 1 raw + 15 augmentations = 16 tiles; remaining slots hidden
+        _plot_steps(labels, images, save_path=save_path, show=show, ncols=6, nrows=3)
         return
 
     # Otherwise: stepwise replay + built-in preprocessing
