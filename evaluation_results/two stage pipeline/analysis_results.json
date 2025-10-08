@@ -4,46 +4,41 @@
     256,
     256
   ],
-  "nuclei_count": 16,
+  "nuclei_count": 13,
   "statistics": {
-    "total_count": 16,
+    "total_count": 13,
     "class_distribution": {
-      "Neoplastic": 7,
-      "Inflammatory": 3,
-      "Connective": 4,
-      "Epithelial": 2
+      "Inflammatory": 5,
+      "Neoplastic": 4,
+      "Connective": 4
     },
     "area_stats": {
-      "mean": 863.4375,
-      "std": 741.856031244439,
-      "min": 62.0,
-      "max": 2499.0,
-      "median": 686.0
+      "mean": 498.6923076923077,
+      "std": 671.542470690297,
+      "min": 127.0,
+      "max": 2755.0,
+      "median": 280.0
     },
-    "stage_agreement": 0.5,
+    "stage_agreement": 0.5384615384615384,
     "confidence_stats": {
-      "mean": 0.2928076134994626,
-      "std": 0.03754248187068614,
-      "min": 0.24782000482082367,
-      "max": 0.3679291605949402,
-      "median": 0.278732031583786
+      "mean": 0.3012230029472938,
+      "std": 0.04632885113243815,
+      "min": 0.2534269392490387,
+      "max": 0.38914164900779724,
+      "median": 0.27635446190834045
     },
     "class_confidence": {
-      "Neoplastic": {
-        "mean": 0.2603808322123119,
-        "count": 7
-      },
       "Inflammatory": {
-        "mean": 0.3406497339407603,
-        "count": 3
+        "mean": 0.3451532781124115,
+        "count": 5
       },
-      "Connective": {
-        "mean": 0.30492931604385376,
+      "Neoplastic": {
+        "mean": 0.2645498290657997,
         "count": 4
       },
-      "Epithelial": {
-        "mean": 0.3102947622537613,
-        "count": 2
+      "Connective": {
+        "mean": 0.28298333287239075,
+        "count": 4
       }
     }
   },

@@ -248,11 +248,12 @@ def visualize_pipeline_results(image: np.ndarray,
                 # Convert to numpy array if needed
                 contour_np = np.array(contour, dtype=np.int32)
                 if contour_np.ndim == 2 and contour_np.shape[1] == 2:
-                    # Reshape to (n_points, 1, 2) format expected by OpenCV
-                    contour_np = contour_np.reshape(-1, 1, 2)
-                elif contour_np.ndim == 3:
-                    # Already in correct format
-                    pass
+                    # region.coords returns (row, col) => (y, x). Swap to (x, y) for OpenCV
+                    contour_np = contour_np[:, [1, 0]].reshape(-1, 1, 2)
+                elif contour_np.ndim == 3 and contour_np.shape[-1] == 2:
+                    # Already (N, 1, 2). Ensure last dim is (x, y)
+                    contour_np = contour_np.copy()
+                    contour_np[:, :, 0], contour_np[:, :, 1] = contour_np[:, :, 1], contour_np[:, :, 0]
                 else:
                     # Skip invalid contours
                     continue
